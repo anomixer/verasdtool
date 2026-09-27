@@ -5,6 +5,10 @@
   "scripts": {
     "build": "node src/verasdedit/verasdedit.mjs && node src/verasdformat/verasdformat.mjs",
     "build:verasdedit": "node src/verasdedit/verasdedit.mjs",
-    "build:verasdformat": "node src/verasdformat/verasdformat.mjs"
+    "build:verasdformat": "node src/verasdformat/verasdformat.mjs",
+    "build:fat32": "node src/verasd-fat32/fat32-build.mjs",
+    "test:fat32": "python src/verasd-fat32/test_fat32.py",
+    "build:prodos": "node src/verasd-prodos/verasd.mjs",
+    "test:prodos": "python src/verasd-prodos/test_driver.py && python src/verasd-prodos/test_install.py"
   }
 }

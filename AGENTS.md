@@ -491,3 +491,27 @@ Communicates in Traditional Chinese — reply in TC. Explicitly told to referenc
 `src/verasdedit/verasdedit.asm` (total sectors) and `a2vera/sd_diag.asm` (FAT32 root dir +
 sector reads) instead of self-debugging, and that 8-bit→32-bit FAT32 math must
 be handled carefully ("要用8-bit去算32-bit的fat32不容易").
+
+## VeraSD FAT32 native client
+
+Status recorded 2026-09-27: first functional standalone client is built and
+tested. FAT32 support as a ProDOS-accessible filesystem is not finished.
+
+- This project lives at `src/verasd-fat32/`. It is separate from the ProDOS raw block driver in `C:\dev\a2vera` and does not turn FAT32 into a ProDOS block volume.
+- Source files moved from `C:\dev\a2vera\verasd` into `src/verasd-fat32/`. The generated `VeraSD-IFS-FAT32.po` and disposable `VeraSD-IFS-FAT32.img` live in the repository root. The runtime build uses this repository's `src/asm6502.mjs`, `assets/ProDOS_2_4_3.po`, and vendored FAT/SD source modules. Do not add a build-time dependency on the a2vera checkout.
+- Build: `node src/verasd-fat32/fat32-build.mjs` or `build.bat fat32`. Test: `python src/verasd-fat32/test_fat32.py` / `npm run test:fat32`. Independent image extraction: `python src/verasd-fat32/check_fat32_image.py` (optional Python package `pyfatfs`).
+- `python src/verasd-fat32/fat32-fixture.py` creates the repository-root 128 MiB `VeraSD-IFS-FAT32.img` only if absent. It deliberately refuses to overwrite an existing file. Never use reset/format commands against this image without preserving evidence; this is a disposable test volume, not the user's physical SD image.
+- Implemented in `FAT32.SYSTEM`: standalone BRUN app, root 8.3 catalog, file read, and overwrite of preallocated 1024-byte TESTNOW.BIN. It does not register a ProDOS block/MLI device.
+- Remaining: create files; allocate/free clusters; append and resize; delete and rename; update FAT copies, FSInfo and directory metadata; subdirectories and LFN; file exchange with ProDOS; and a defined MLI interface so BASIC can access FAT32. Copy II Plus directly parses ProDOS block structures, so it will not understand FAT32 unless it has an explicit FAT32-aware integration.
+- The tested image has fragmented HIGH.BIN and TESTNOW.BIN beyond 32 MiB. AppleWin reads and writes them; host byte comparison and `pyfatfs` extraction verify content and matching FAT copies. `test_fat32.py` has 25 assembled-client cases. ProDOS regression scripts stay in a2vera and should also pass when the shared source is changed.
+- AppleWin Slot 2 SD image and Slot 6 boot disk were updated to the moved paths under this repository. The emulator was stopped after validation as required by the AppleWin test workflow.
+- Generated `.bin`, labels, expanded assembly, root-level `.po`, and root-level `.img` are ignored build/test outputs. Edit source `.asm`, `.mjs`, and vendored `.inc` modules. Keep README/AGENTS status clear that this is a first functional stage, not a complete FAT32 IFS.
+
+## VeraSD ProDOS 8 driver
+
+- ProDOS source project moved from `C:\dev\a2vera\verasd` to `src/verasd-prodos/`, including assembly, build scripts and simulator tests. Generated `VeraSD-IFS-ProDOS.po` and `VeraSD-IFS-ProDOS.img` live in the repository root. Keep ProDOS and FAT32 source products in separate directories.
+- Build: `node src/verasd-prodos/verasd.mjs`, `build.bat prodos`, or `npm run build:prodos`. Regressions: `npm run test:prodos`. Paths use this repository's `src/asm6502.mjs` and `assets/ProDOS_2_4_3.po`.
+- Boot image: project-root `VeraSD-IFS-ProDOS.po`. Raw 32 MiB SD image: project-root `VeraSD-IFS-ProDOS.img`, exposing 65,535 blocks. Build preserves existing image contents; `--reset-sd` deletes files. Never reset user data.
+- Architecture: language-card bank 2 body `$D400`, common bridge `$FF00`; ProDOS interrupt code at `$FF9B+` stays intact. Installation removes native `/RAM` from the ProDOS device list.
+- Validated: 19 assembled-driver cases, installer initialization/rollback cases, IRQ vector check, AppleWin CATALOG with 65,535 blocks, and Copy II Plus 8.4 catalog/copy after BYE. Real SD hardware and physical AppleWin high-block writes remain untested.
+- This block driver does not implement FAT32. Use `src/verasd-fat32/` for the separate native FAT32 client and its documented scope.
