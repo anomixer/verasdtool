@@ -23,6 +23,7 @@ hard-won debugging lessons so future work doesn't re-trace the same mistakes.
   plus a mounted SD card image.
 - Also has an **editor mode** (`E`) that writes a sector back via CMD24.
 - Ships as a ready-to-boot **ProDOS disk image** (`verasdedit.po`, 143360 bytes).
+- Boot volume names are `VERASDEDIT`, `VERASDFORMAT`, `VERASDIFSPRODOS`, and `VERASDIFSFAT32`; each builder writes the name in uppercase to the ProDOS volume-directory header. ProDOS volume names cannot contain hyphens.
 
 ## Repository layout
 
@@ -31,8 +32,9 @@ hard-won debugging lessons so future work doesn't re-trace the same mistakes.
 | src/verasdedit/ | VeraSDEdit assembly source, startup BASIC, and its Node build module |
 | src/verasdformat/ | VeraSDFormat assembly source, startup BASIC, and its Node build module |
 | assets/ProDOS_2_4_3.po | Shared ProDOS 2.4.3 base disk image |
+| src/prodos-volume-name.mjs | Shared ProDOS volume-name writer used by each boot-disk builder |
 | asm6502.mjs / applebasic.mjs | Shared vendored assembler and Applesoft compiler |
-| build.bat | Root builder: verasdedit, verasdformat, or all |
+| build.bat | Root builder: verasdedit, verasdformat, fat32, prodos, or all |
 | verasdedit.po / verasdformat.po | Ready-to-boot build outputs at repository root |
 
 ## Build
@@ -302,7 +304,7 @@ build `node src/verasdformat/verasdformat.mjs` → `VERASDFORMAT` + `STARTUP` on
 
 ## Memory layout (current — code end must stay below ZPBACKUP)
 
-Program loads `$2000`, currently **8563 bytes, ending at `$4163`**. Code is
+Program loads `$2000`, currently **8565 bytes, ending at `$4165`**. Code is
 well below `ZPBACKUP=$9400`; the formatter uses the upper Apple II memory for
 its buffers and scratch space.
 
@@ -502,6 +504,7 @@ tested. FAT32 support as a ProDOS-accessible filesystem is not finished.
 - Build: `node src/verasd-fat32/fat32-build.mjs` or `build.bat fat32`. Test: `python src/verasd-fat32/test_fat32.py` / `npm run test:fat32`. Independent image extraction: `python src/verasd-fat32/check_fat32_image.py` (optional Python package `pyfatfs`).
 - `python src/verasd-fat32/fat32-fixture.py` creates the repository-root 128 MiB `VeraSD-IFS-FAT32.img` only if absent. It deliberately refuses to overwrite an existing file. Never use reset/format commands against this image without preserving evidence; this is a disposable test volume, not the user's physical SD image.
 - Implemented in `FAT32.SYSTEM`: standalone BRUN app, root 8.3 catalog, file read, and overwrite of preallocated 1024-byte TESTNOW.BIN. It does not register a ProDOS block/MLI device.
+- The boot disk includes a compiled `STARTUP` BAS guide; keep `BASIC.SYSTEM` first and `STARTUP` second in the catalog. The app title is `VeraSD FAT32 Native File Client v1.03`, followed by `by anomixer 2026` and a blank line.
 - Remaining: create files; allocate/free clusters; append and resize; delete and rename; update FAT copies, FSInfo and directory metadata; subdirectories and LFN; file exchange with ProDOS; and a defined MLI interface so BASIC can access FAT32. Copy II Plus directly parses ProDOS block structures, so it will not understand FAT32 unless it has an explicit FAT32-aware integration.
 - The tested image has fragmented HIGH.BIN and TESTNOW.BIN beyond 32 MiB. AppleWin reads and writes them; host byte comparison and `pyfatfs` extraction verify content and matching FAT copies. `test_fat32.py` has 25 assembled-client cases. ProDOS regression scripts stay in a2vera and should also pass when the shared source is changed.
 - AppleWin Slot 2 SD image and Slot 6 boot disk were updated to the moved paths under this repository. The emulator was stopped after validation as required by the AppleWin test workflow.
@@ -512,6 +515,22 @@ tested. FAT32 support as a ProDOS-accessible filesystem is not finished.
 - ProDOS source project moved from `C:\dev\a2vera\verasd` to `src/verasd-prodos/`, including assembly, build scripts and simulator tests. Generated `VeraSD-IFS-ProDOS.po` and `VeraSD-IFS-ProDOS.img` live in the repository root. Keep ProDOS and FAT32 source products in separate directories.
 - Build: `node src/verasd-prodos/verasd.mjs`, `build.bat prodos`, or `npm run build:prodos`. Regressions: `npm run test:prodos`. Paths use this repository's `src/asm6502.mjs` and `assets/ProDOS_2_4_3.po`.
 - Boot image: project-root `VeraSD-IFS-ProDOS.po`. Raw 32 MiB SD image: project-root `VeraSD-IFS-ProDOS.img`, exposing 65,535 blocks. Build preserves existing image contents; `--reset-sd` deletes files. Never reset user data.
+- ProDOS/FAT32 boot disk volume names are `VERASDIFSPRODOS` and `VERASDIFSFAT32`, written in uppercase by each `.po` builder.
+- ProDOS disk builders stamp only their generated files' creation and modification date/time from the local build clock. Preserve timestamps on base files such as `BASIC.SYSTEM` and `PRODOS`.
 - Architecture: language-card bank 2 body `$D400`, common bridge `$FF00`; ProDOS interrupt code at `$FF9B+` stays intact. Installation removes native `/RAM` from the ProDOS device list.
 - Validated: 19 assembled-driver cases, installer initialization/rollback cases, IRQ vector check, AppleWin CATALOG with 65,535 blocks, and Copy II Plus 8.4 catalog/copy after BYE. Real SD hardware and physical AppleWin high-block writes remain untested.
 - This block driver does not implement FAT32. Use `src/verasd-fat32/` for the separate native FAT32 client and its documented scope.
+
+### VERASD.SYSTEM (type $FF, ProDOS SYS)
+
+- `verasd_sys.asm` builds `VERASD.SYSTEM` (type `$FF`, aux `$2000`). `verasd.mjs` is the canonical builder and must assemble this SYS entry point so launchers such as Bitsy Bye can execute it.
+- The boot disk also contains `VERASD.BIN` (type `$06`, aux `$2000`), assembled from `verasd.asm`. This BRUN entry returns to Applesoft BASIC after installing the resident driver.
+- The boot disk contains `STARTUP` (type `$FC`, aux `$0801`), compiled from `src/verasd-prodos/startup.bas`; BASIC.SYSTEM auto-runs it. STARTUP detects VERA in slot 2/4, runs `BRUN VERASD.BIN` to initialize and bring the SD volume online, then shows `CATALOG SD Card` / `Run A2Desktop` options (the driver is already loaded). Keep BASIC.SYSTEM first and STARTUP second in the volume catalog.
+- The BRUN installer writes `$A5` to `$1FF0` only after successful device registration and `ON_LINE`. STARTUP clears and checks this marker to report SD detection; if the unit is already listed, it skips duplicate installation. Keep the marker address/value synchronized between `verasd.asm` and `startup.bas` (`$1FF0` / decimal `8176`, `$A5` / decimal `165`).
+- SYS path, whether driver installation succeeds or fails: after the one-second result delay, a one-shot helper is copied to `$1000`, scans the boot volume directory for the next `.SYSTEM` after `VERASD.SYSTEM`, and loads it at `$2000`. The install result remains visible before handoff. The helper is not part of the resident driver. `verasd.mjs` keeps the base `QUIT.SYSTEM` file last in the volume catalog so a chain ending there returns to Bitsy Bye.
+- The helper saves the entry boot unit from `$BF30` to `$1FF0` before installing the VERA device; directory `READ_BLOCK` calls must keep using that saved source unit even after the SD device appears in slot 2/4. Root directory block 2 is little-endian `$0002` (`zp_block=$02`, `zp_block+1=$00`). Keep helper scratch outside its 512-byte directory/file buffer `$1800-$19FF`: volume name is `$1A00`, length `$1A10`. Save the target SYS EOF from the directory entry before `OPEN`, because ProDOS reuses `$1800` as the OPEN I/O buffer. When building the length-prefixed path, copy exactly the filename length, including the final character.
+- AppleWin integration was verified with a disposable A2 Desktop 2mg ordered `VERASD.SYSTEM`, `CLOCK.SYSTEM`, `DESKTOP.SYSTEM`; booting from the 2mg reached the A2Desktop desktop both with the SD image mounted in VERA slot 2 and with VERA present but no SD image (installer failure). This checks that handoff continues after either installer result and the original boot unit remains the lookup source.
+- No-next-SYS / load-failure fallback: the handoff helper invokes MLI QUIT (`$65`) with param block `count=4, 4 bytes zero`.
+- BRUN path also works: the legacy installer detects VERA and SD, copies/registers the driver, writes the STARTUP success marker, then returns to BASIC with `RTS`.
+- `verasd.asm` is the BRUN entry and ends with `RTS`; package it only as type `$06`, never as type `$FF`. Returning with RTS from a SYS launched by Bitsy Bye has no valid return address and falls through to `$0002 BRK`.
+- Key lesson: `QUIT.SYSTEM` uses `JSR $BF00 / !byte $65 / !word param_block` where param block = `04 00 00 00 00` (count=4 + 4 reserved bytes). The canonical builder preserves the base SYS file and places it last in the catalog.

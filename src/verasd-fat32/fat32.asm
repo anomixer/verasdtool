@@ -18,6 +18,11 @@ app_save_zp:
  lda #<title
  ldx #>title
  jsr print
+ lda #<byline
+ ldx #>byline
+ jsr print
+ jsr cr
+ jsr cr
  lda #0
  sta zp_vera
  lda #$C2
@@ -955,8 +960,10 @@ write_test_bad:
  sec
  rts
 
-title: ASC "VERASD FAT32 NATIVE FILE CLIENT"
+title: ASC "VeraSD FAT32 Native File Client v1.03"
  !byte 13,0
+byline: ASC "by anomixer 2026"
+ !byte 0
 mounted: ASC "MOUNTED - SECTORS $"
  !byte 0
 menu: ASC "C:CATALOG R:READ W:WRITE TEST Q:QUIT"

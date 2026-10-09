@@ -44,11 +44,11 @@ sd_err    = $25      ; sticky SPI error flag
 
 SPI_ON    = $03      ; CS selected + slow clock
 SPI_OFF   = $02      ; CS released + slow clock
-STARTUP_SD_STATUS = $1FF0 ; BASIC STARTUP handshake: $A5 means install succeeded
 
 start:
-        lda #$00
-        sta STARTUP_SD_STATUS
+        ; Preserve the ProDOS boot unit for the one-shot next-SYS helper.
+        lda $BF30
+        sta $1FF0
         php
         sei
         cld
@@ -105,8 +105,6 @@ slot_ok:
         bcs install_rollback
         jsr register_device
         bcs install_rollback
-        lda #$A5
-        sta STARTUP_SD_STATUS
         lda #1
         sta message_id
         jmp done
@@ -125,8 +123,49 @@ installer_restore_zp:
         dex
         bpl installer_restore_zp
         jsr show_message
+        jsr message_delay
         plp
+
+        ; Continue the SYS startup chain whether installation succeeded or
+        ; failed. VERASD.BIN remains a BASIC BRUN installer and is unchanged.
+        lda #<nextsys_src
+        sta zp_ptr
+        lda #>nextsys_src
+        sta zp_ptr+1
+        lda #<$1000
+        sta zp_spidat
+        lda #>$1000
+        sta zp_spidat+1
+        ldx #NEXTSYS_PAGES
+        ldy #0
+copy_nextsys:
+        lda (zp_ptr),Y
+        sta (zp_spidat),Y
+        iny
+        bne copy_nextsys
+        inc zp_ptr+1
+        inc zp_spidat+1
+        dex
+        bne copy_nextsys
+        jmp $1000
+
+; Leave the result visible briefly before returning control to ProDOS/launcher.
+; Two 65536-iteration loops at roughly 1 MHz are about one second total.
+message_delay:
+        ldx #2
+md_outer:
+        lda #$00
+        sta md_count
+        sta md_count+1
+md_loop:
+        dec md_count
+        bne md_loop
+        dec md_count+1
+        bne md_loop
+        dex
+        bne md_outer
         rts
+md_count: !word 0
 
 ; =============================================================================
 ; Copy the driver to DRV_TARGET

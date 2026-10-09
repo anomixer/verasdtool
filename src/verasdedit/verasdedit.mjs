@@ -4,6 +4,8 @@ import { execFileSync } from "child_process"
 import { fileURLToPath } from "url"
 import { assemble6502 } from "../asm6502.mjs"
 import { compileApplesoftBasic } from "../applebasic.mjs"
+import { setProDOSFileTimestamps } from "../prodos-timestamp.mjs"
+import { setProDOSVolumeName } from "../prodos-volume-name.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Base ProDOS 2.4.3 disk image, vendored in this repo under base/ (the build
@@ -24,6 +26,7 @@ const buildProDosDisk = () => {
     throw new Error(`Base ProDOS 2.4.3.po not found at ${basePoPath}!`)
   }
   const disk = new Uint8Array(fs.readFileSync(basePoPath))
+  setProDOSVolumeName(disk, "VERASDEDIT")
 
   const bitmap = disk.subarray(6 * 512, 7 * 512)
   const isBlockFree = (b) => (bitmap[Math.floor(b / 8)] & (1 << (7 - (b % 8)))) !== 0
@@ -154,6 +157,7 @@ const buildProDosDisk = () => {
   disk[2 * 512 + 0x25] = fileCount & 0xFF
   disk[2 * 512 + 0x26] = (fileCount >> 8) & 0xFF
 
+  setProDOSFileTimestamps(disk, ["VERASDEDIT.BIN", "STARTUP"])
   return disk
 }
 

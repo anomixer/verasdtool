@@ -2,9 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assemble6502} from '../asm6502.mjs';
+import {compileApplesoftBasic} from '../applebasic.mjs';
+import {setProDOSVolumeName} from '../prodos-volume-name.mjs';
+import {setProDOSFileTimestamps} from '../prodos-timestamp.mjs';
 const dir=path.dirname(fileURLToPath(import.meta.url));
 const repoRoot=path.resolve(dir,'../..');
 const read=n=>fs.readFileSync(path.join(dir,n),'utf8');
+const startupBytes=compileApplesoftBasic(dir,path.join(dir,'startup.bas'));
 // Share the tested SD protocol, without changing the ProDOS product.
 let backend=read('sd-protocol.inc');
 backend=backend.replace(/sd_build_lba:[\s\S]*?lba_done:\s*rts/,`sd_build_lba:
@@ -105,7 +109,14 @@ fs.writeFileSync(path.join(dir,'fat32.labels.json'),JSON.stringify(labels,null,2
 let diskCode=read('boot-disk-pack.mjs.inc');
 const basePoPath=path.join(dir,'../../assets/ProDOS_2_4_3.po');
 diskCode=diskCode.replace('"VERASD.SYSTEM"','"FAT32.SYSTEM"');
-const disk=new Function('fs','basePoPath','instBytes','INST_ADDR',diskCode+'\nreturn disk;')(fs,basePoPath,bin,0x2000);
+const disk=new Function('fs','basePoPath','instBytes','INST_ADDR','startupBytes',diskCode+'\nreturn disk;')(fs,basePoPath,bin,0x2000,startupBytes);
+setProDOSVolumeName(disk,'VERASDIFSFAT32');
+// Keep BASIC.SYSTEM first and its auto-run introduction second in CATALOG.
+const entries=[],slots=[];let dirBlock=2;
+while(dirBlock!==0){const blk=disk.subarray(dirBlock*512,(dirBlock+1)*512),next=blk[2]|blk[3]<<8;for(let i=0;i<13;i++){if(dirBlock===2&&i===0)continue;const off=4+i*39;slots.push({blk,off});if(!blk[off])continue;const len=blk[off]&15,name=String.fromCharCode(...blk.subarray(off+1,off+1+len));entries.push({name,data:Buffer.from(blk.subarray(off,off+39))});}dirBlock=next;}
+const first=['BASIC.SYSTEM','STARTUP'];entries.sort((a,b)=>{const x=first.indexOf(a.name),y=first.indexOf(b.name);return (x<0?first.length:x)-(y<0?first.length:y);});
+for(const {blk,off} of slots)blk.fill(0,off,off+39);entries.forEach(({data},i)=>slots[i].blk.set(data,slots[i].off));
 const outPo=path.join(repoRoot,'VeraSD-IFS-FAT32.po');
+setProDOSFileTimestamps(disk, ["FAT32.SYSTEM","STARTUP"]);
 fs.writeFileSync(outPo,disk);
-console.log(`FAT32.SYSTEM ${bin.length} bytes @ $2000; built ${outPo}`);
+console.log(`FAT32.SYSTEM ${bin.length} bytes @ $2000; STARTUP ${startupBytes.length} bytes; built ${outPo}`);

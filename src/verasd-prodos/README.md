@@ -9,7 +9,32 @@ BRUN VERASD.SYSTEM
 CATALOG /VERASD
 ```
 
-The installer is a BIN file despite its .SYSTEM suffix. VERA slots 2 and 4 are detected.
+`VERASD.SYSTEM` is a ProDOS SYS file (file type `$FF`, load address `$2000`).
+It detects VERA in slot 2 or 4 and attempts to install the resident driver.
+Whether installation succeeds or fails, it displays the result and searches
+the boot volume directory for the next `.SYSTEM` after `VERASD.SYSTEM`,
+continuing the boot sequence to `DESKTOP.SYSTEM`.
+The handoff helper runs temporarily at `$1000` and is not part of the resident
+driver. `QUIT.SYSTEM` is kept as the final catalog entry so the chain returns
+to Bitsy Bye after the other startup SYS files finish. If no later SYS file
+exists or it cannot be loaded, the helper returns through ProDOS MLI `QUIT`.
+`VERASD.BIN` is also included as a ProDOS BIN file (file type `$06`, load
+address `$2000`). Run `BRUN VERASD.BIN` from Applesoft BASIC to install the same
+driver and return to BASIC, then access files on the SD volume with ProDOS
+commands such as `CATALOG /VERASD`.
+The disk's `STARTUP` BAS file runs with BASIC.SYSTEM, installs the driver via
+`VERASD.BIN`, then offers `CATALOG SD Card` and `Run A2Desktop` options. The
+driver is already loaded before either option is selected. `BASIC.SYSTEM` and
+`STARTUP` are first and second in the catalog, respectively; `QUIT.SYSTEM` is
+last for the SYS handoff chain.
+The boot disk volume name is `VERASDIFSPRODOS`.
+
+The SYS handoff was verified in AppleWin using a disposable A2 Desktop 2mg
+ordered `VERASD.SYSTEM`, `CLOCK.SYSTEM`, `DESKTOP.SYSTEM`. Booting reached the
+A2Desktop desktop both with the SD image mounted in VERA slot 2 and with VERA
+present but no SD image (installer failure). This confirms the handoff uses
+the original boot unit and continues after either install result. The ProDOS
+driver and installer regression suite also passes with `npm run test:prodos`.
 
 The new SD image is a raw 32 MiB ProDOS image, equivalent to a raw ProDOS HDV. Its volume has 65,535 blocks (512 bytes each); block 65,535 and any extra physical capacity are inaccessible. Existing raw ProDOS volumes use the block count from their volume header. MBR/GPT partitions and FAT32 are not supported by this product.
 

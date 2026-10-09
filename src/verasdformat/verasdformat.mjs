@@ -10,6 +10,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { assemble6502 } from "../asm6502.mjs";
 import { compileApplesoftBasic } from "../applebasic.mjs";
+import { setProDOSFileTimestamps } from "../prodos-timestamp.mjs";
+import { setProDOSVolumeName } from "../prodos-volume-name.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..");
@@ -39,6 +41,7 @@ const buildProDosDisk = () => {
     throw new Error(`Base ProDOS 2.4.3.po not found at ${basePoPath}!`);
   }
   const disk = new Uint8Array(fs.readFileSync(basePoPath));
+  setProDOSVolumeName(disk, "VERASDFORMAT");
 
   const bitmap = disk.subarray(6 * 512, 7 * 512);
   const isBlockFree = (b) =>
@@ -179,6 +182,7 @@ const buildProDosDisk = () => {
   disk[2 * 512 + 0x25] = fileCount & 0xff;
   disk[2 * 512 + 0x26] = (fileCount >> 8) & 0xff;
 
+  setProDOSFileTimestamps(disk, ["VERASDFORMAT", "STARTUP"]);
   return disk;
 };
 

@@ -3727,7 +3727,7 @@ FMT_WORD:     ASC "FORMAT"
 ; Messages. $0D starts the next row, so a message carries its own line breaks.
 ; -----------------------------------------------------------------------------
 MSG_TITLE:
-    ASC "VeraSDFormat - FAT32 Formatter for VERA SD v1.02 by anomixer"
+    ASC "VeraSDFormat - FAT32 Formatter for VERA SD v1.03 by anomixer"
     !BYTE $0D, 0
 MSG_VERS:
     !BYTE 0
