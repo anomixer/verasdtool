@@ -65,6 +65,8 @@ reads, and performs a test write; it is not yet a real IFS driver.
 | src/verasd-prodos/ | ProDOS SD block driver, installer, and tests |
 | src/verasd-fat32/ | Preliminary FAT32 test client, source modules, and tests |
 | assets/ProDOS_2_4_3.po | Shared ProDOS 2.4.3 base disk image |
+| src/prodos-volume-name.mjs | Shared ProDOS boot-volume name writer used by all image builders |
+| src/prodos-timestamp.mjs | Shared file-date writer used by all image builders |
 | asm6502.mjs / applebasic.mjs | Shared vendored build dependencies |
 | build.bat | Root builder for the four tools |
 | VeraSD-IFS-ProDOS.po / `.img.zip` | ProDOS boot disk and packaged SD volume |
@@ -72,9 +74,12 @@ reads, and performs a test write; it is not yet a real IFS driver.
 | verasdedit.png / verasdformat.png | VeraSDEdit / VeraSDFormat screenshots |
 | VeraSD-IFS-ProDOS.png / VeraSD-IFS-FAT32.png | ProDOS / FAT32 screenshots |
 
-Generated `.po` and raw `.img` files remain ignored by Git. The two `.img.zip`
-archives are tracked so the tested SD images can be shared without committing
-large raw image files.
+Bootable `.po` disk images and the two `.img.zip` archives are tracked. Raw
+`.img` files remain ignored so the tested SD images can be shared without
+committing large unpacked images.
+Each `.po` build stamps its generated files' ProDOS creation and modification
+dates and times from the build machine's local clock; base files such as
+`BASIC.SYSTEM` and `PRODOS` keep their original timestamps.
 
 <a id="english"></a>
 ## 🇬🇧 English
@@ -126,6 +131,7 @@ and raw disk contents.
 - **Browse:** move through sectors with `N`/`P`, reload with `R`, or enter an LBA with `L`.
 - **Edit:** change bytes in hex or ASCII, then write the complete sector with `W`.
 - **Capacity:** reads the SD card's CSD and displays its total sector count; LBA entry is 32-bit.
+- **Boot volume name:** `VERASDEDIT`.
 
 #### Build
 
@@ -141,7 +147,7 @@ Successful output:
 
 ```
 Created ...\verasdedit.po (143360 bytes)
-  VERASDEDIT.BIN: 3848 bytes (load $2000)
+  VERASDEDIT.BIN: 4491 bytes (load $2000)
   STARTUP: 783 bytes
 ```
 
@@ -267,6 +273,7 @@ A companion utility in this repository that formats a VERA-attached SD/MMC card 
   - `[0] Exit`: Clean exit back to ProDOS.
 
 Format and verify keep their progress and per-sector results on screen; the final `PASS` or `FAIL - N errors` is appended below them. The format screen keeps the `VeraSDFormat` title, separates the progress heading from stage rows, and waits for a key after the final result.
+- **Boot volume name:** `VERASDFORMAT`.
 - **Build**:
   ```powershell
   build.bat verasdformat    # Windows one-click
@@ -292,6 +299,11 @@ shown above.
   cannot be addressed. FAT32 and partition tables are not supported.
 - **Hardware:** detects VERA in slot 2 or 4 and supports SDHC block addressing
   and SDSC byte addressing.
+- **File type:** `VERASD.SYSTEM` is type `$FF` (SYS), so ProDOS launchers such as Bitsy Bye can execute it.
+  It installs the driver and exits through MLI QUIT (`$65`), returning control to the launcher.
+- **BASIC entry:** `VERASD.BIN` is also included as type `$06` (BIN), load address `$2000`. From Applesoft BASIC, run `BRUN VERASD.BIN`; it installs the driver and returns to BASIC, where SD files can be accessed through ProDOS commands.
+- **Startup menu:** `STARTUP` is a BAS file auto-run by `BASIC.SYSTEM`. It detects VERA in slot 2 or 4, initializes the SD card by running `VERASD.BIN`, then offers CATALOG or A2Desktop for the detected slot. The catalog lists `BASIC.SYSTEM` first and `STARTUP` second.
+- **Boot disk volume name:** `VERASDIFSPRODOS`.
 - **Build**:
   ```powershell
   build.bat prodos                 # Windows
@@ -304,10 +316,18 @@ shown above.
   # Select VeraSD-IFS-ProDOS.img in the VERA card's Configure dialog.
   AppleWin.exe -s2 vera -d1 C:\dev\verasdtool\VeraSD-IFS-ProDOS.po -power-on
   ```
-  At the ProDOS prompt, run `BRUN VERASD.SYSTEM`. The build preserves the SD
-  image; `--reset-sd` recreates it as an empty ProDOS volume.
+  `BASIC.SYSTEM` auto-runs STARTUP, which detects the VERA slot, installs the
+  driver, checks SD availability, and offers CATALOG or A2Desktop. To launch
+  the SYS installer manually from the ProDOS prompt, run `-VERASD.SYSTEM`.
+  The build preserves the SD image; `--reset-sd` recreates it as an empty
+  ProDOS volume.
 - **Tests:** `npm run test:prodos` runs the assembled-driver and installer
   regression suites (Python and `py65` required).
+- The SYS build uses `src/verasd-prodos/verasd_sys.asm`; `verasd.asm` is the
+  legacy BRUN entry point and ends with `RTS`, which is invalid when ProDOS
+  launches it as a SYS file.
+- After displaying its result, `VERASD.SYSTEM` waits about one second before
+  calling MLI QUIT so Bitsy Bye has time to show the message.
 
 Source and detailed implementation notes: `src/verasd-prodos/README.md`.
 
@@ -327,6 +347,7 @@ cannot address the FAT32 volume directly.
 - **Volume support:** raw FAT32 or the first FAT32 MBR partition, 512-byte
   sectors, with 32-bit sector addresses. The 128 MiB fixture exercises
   fragmented files located beyond 32 MiB.
+- **Boot disk volume name:** `VERASDIFSFAT32`.
 - **Build**:
   ```powershell
   build.bat fat32                   # Windows
@@ -339,7 +360,8 @@ cannot address the FAT32 volume directly.
   # Select VeraSD-IFS-FAT32.img in the VERA card's Configure dialog.
   AppleWin.exe -s2 vera -d1 C:\dev\verasdtool\VeraSD-IFS-FAT32.po -power-on
   ```
-  At the ProDOS prompt, run `BRUN FAT32.SYSTEM`. For a fresh disposable test
+  `STARTUP` briefly describes `FAT32.SYSTEM` when BASIC.SYSTEM starts. At the
+  ProDOS prompt, run `BRUN FAT32.SYSTEM`. For a fresh disposable test
   image instead, run `python src/verasd-fat32/fat32-fixture.py`; it refuses to
   overwrite an existing image.
 - **Tests:** `npm run test:fat32` runs 25 assembled-client cases (Python and
@@ -447,6 +469,7 @@ VeraSDEdit 是在 Apple II 上執行的 VERA SD sector 瀏覽與編輯工具，�
 - **瀏覽：** `N`/`P` 切換 sector、`R` 重新讀取、`L` 輸入 LBA。
 - **編輯：** 可用 hex 或 ASCII 修改 byte，按 `W` 寫回整個 sector。
 - **容量：** 讀取 SD 的 CSD 並顯示總 sector 數，LBA 輸入為 32-bit。
+- **開機磁碟區名稱：** `VERASDEDIT`。
 
 #### 建置
 
@@ -462,7 +485,7 @@ node src/verasdedit/verasdedit.mjs
 
 ```
 Created ...\verasdedit.po (143360 bytes)
-  VERASDEDIT.BIN: 3848 bytes (load $2000)
+  VERASDEDIT.BIN: 4491 bytes (load $2000)
   STARTUP: 783 bytes
 ```
 
@@ -564,6 +587,7 @@ nibble 閃爍、ASCII 欄游標字元閃爍，即使該 byte 已改過（反白�
   - `[2] Format SD`：快速格式化。需手動鍵入 `FORMAT` 並按 `RETURN` 確認執行，按 `ESC` 隨時取消。
   - `[3] Verify SD`：透過 CMD17 逐一讀回所有中繼資料磁區，與樣板進行 512-byte 逐位元組比對驗證。
   - `[0] Exit`：還原零頁與中斷向量，乾淨返回 ProDOS。
+- **開機磁碟區名稱：** `VERASDFORMAT`。
 - **建置方式**：
   ```powershell
   build.bat verasdformat    # Windows 一鍵建置
@@ -588,6 +612,7 @@ ProDOS 程式和 Copy II Plus 使用；容量上限為 65,535 個 512-byte block
 `build.bat prodos` 或 `npm run build:prodos` 建置，再以
 `npm run test:prodos` 執行組譯後 driver 與 installer 回歸測試（需要 Python
 與 py65）。開機 `VeraSD-IFS-ProDOS.po` 後執行 `BRUN VERASD.SYSTEM`。
+開機磁碟區名稱為 `VERASDIFSPRODOS`；安裝訊息會停留約一秒再返回 Bitsy Bye。
 
 SD image 是 32 MiB raw ProDOS volume，提供 65,535 個 512-byte blocks。
 常駐 driver 使用 language card bank 2，已測試 ProDOS BASIC 和 BYE 後的
@@ -604,7 +629,9 @@ Copy II Plus 流程。建置會保留 image 中的檔案；`--reset-sd` 會重�
   # 在 VERA Configure 中選取 VeraSD-IFS-ProDOS.img
   AppleWin.exe -s2 vera -d1 C:\dev\verasdtool\VeraSD-IFS-ProDOS.po -power-on
   ```
-  開機至 ProDOS 提示符後，執行 `BRUN VERASD.SYSTEM`。
+  開機 `VeraSD-IFS-ProDOS.po` 後，`BASIC.SYSTEM` 會自動執行 STARTUP：偵測 Slot 2/4 的 VERA、
+  載入 driver 並確認 SD 上線，再提供 CATALOG 或啟動 A2Desktop 的選單。
+  也可在 ProDOS 提示符手動執行 `-VERASD.SYSTEM`。
 
 <a id="cn-fat32-client"></a>
 
@@ -627,6 +654,7 @@ ProDOS base image 與 FAT32/SD 原始碼模組，不依賴另一個 a2vera check
 若檔案已存在，程式會拒絕覆寫。將 image 掛載到 VERA、開機後執行
 `BRUN FAT32.SYSTEM`。按 C 列根目錄、按 R 讀取 8.3 檔名、按 W 再按 Y
 覆寫預先配置的 1,024-byte `TESTNOW.BIN`，按 Q 回 BASIC。
+開機磁碟區名稱為 `VERASDIFSFAT32`。
 
 目前程式能列目錄、讀檔及改寫預先配置的檔案，尚未登錄 ProDOS 磁碟裝置；
 因此 BASIC CATALOG 和 Copy II Plus 還不能直接存取 FAT32。詳細功能與限制見

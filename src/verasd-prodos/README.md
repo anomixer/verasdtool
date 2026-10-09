@@ -9,7 +9,17 @@ BRUN VERASD.SYSTEM
 CATALOG /VERASD
 ```
 
-The installer is a BIN file despite its .SYSTEM suffix. VERA slots 2 and 4 are detected.
+`VERASD.SYSTEM` is a ProDOS SYS file (file type `$FF`, load address `$2000`).
+It detects VERA in slot 2 or 4, installs the resident driver, then exits through
+the ProDOS MLI `QUIT` call so launchers such as Bitsy Bye regain control.
+`VERASD.BIN` is also included as a ProDOS BIN file (file type `$06`, load
+address `$2000`). Run `BRUN VERASD.BIN` from Applesoft BASIC to install the same
+driver and return to BASIC, then access files on the SD volume with ProDOS
+commands such as `CATALOG /VERASD`.
+The disk's `STARTUP` BAS file runs with BASIC.SYSTEM and briefly explains both
+installer files and the BASIC command. `BASIC.SYSTEM` and `STARTUP` are first
+and second in the catalog, respectively.
+The boot disk volume name is `VERASDIFSPRODOS`.
 
 The new SD image is a raw 32 MiB ProDOS image, equivalent to a raw ProDOS HDV. Its volume has 65,535 blocks (512 bytes each); block 65,535 and any extra physical capacity are inaccessible. Existing raw ProDOS volumes use the block count from their volume header. MBR/GPT partitions and FAT32 are not supported by this product.
 

@@ -88,5 +88,6 @@ const addFile = (filename, type, aux, data) => {
 // type $06 sourceless binary: raw program bytes (load addr is in directory aux field)
 const verasdFile = instBytes;
 addFile("VERASD.SYSTEM", 0x06, INST_ADDR, verasdFile);
+addFile("STARTUP", 0xfc, 0x0801, startupBytes);
 disk[2 * 512 + 0x25] = fileCount & 0xff;
 disk[2 * 512 + 0x26] = (fileCount >> 8) & 0xff;

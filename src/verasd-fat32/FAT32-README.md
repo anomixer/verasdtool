@@ -13,7 +13,8 @@ python src/verasd-fat32/fat32-fixture.py
 python src/verasd-fat32/test_fat32.py
 ```
 
-The build writes `VeraSD-IFS-FAT32.po` to the project root. The fixture command
+The build writes `VeraSD-IFS-FAT32.po` to the project root with ProDOS volume
+name `VERASDIFSFAT32`. The fixture command
 creates the root-level `VeraSD-IFS-FAT32.img` only when absent; it refuses to
 replace existing data. The checker reads that same image. It is a disposable raw FAT32 volume, 128 MiB,
 512-byte sectors, two FATs and one sector per cluster. The read and write test
@@ -24,6 +25,10 @@ Boot `VeraSD-IFS-FAT32.po` with that VERA SD image, then:
 ```text
 BRUN FAT32.SYSTEM
 ```
+
+The ProDOS `STARTUP` BAS file introduces `FAT32.SYSTEM` and its commands. The
+FAT32 client screen shows `VeraSD FAT32 Native File Client v1.03`, followed by
+`by anomixer 2026` and a blank line.
 
 Commands:
 

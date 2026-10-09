@@ -1339,7 +1339,7 @@ TOGGLE_PAGE:
 ; String messages
 ; ---------------------------------------------------------------------------
 MSG1:
-    ASC "VeraSDEdit (Hex Sector Editor)  v1.02 by anomixer 2026"
+    ASC "VeraSDEdit (Hex Sector Editor)  v1.03 by anomixer 2026"
     !BYTE $0D, 0
 MSG_HEAD:
     ASC "Offset 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F   ASCII Dump"

@@ -44,11 +44,8 @@ sd_err    = $25      ; sticky SPI error flag
 
 SPI_ON    = $03      ; CS selected + slow clock
 SPI_OFF   = $02      ; CS released + slow clock
-STARTUP_SD_STATUS = $1FF0 ; BASIC STARTUP handshake: $A5 means install succeeded
 
 start:
-        lda #$00
-        sta STARTUP_SD_STATUS
         php
         sei
         cld
@@ -105,8 +102,6 @@ slot_ok:
         bcs install_rollback
         jsr register_device
         bcs install_rollback
-        lda #$A5
-        sta STARTUP_SD_STATUS
         lda #1
         sta message_id
         jmp done
@@ -125,8 +120,46 @@ installer_restore_zp:
         dex
         bpl installer_restore_zp
         jsr show_message
+        jsr message_delay
         plp
+
+        ; Return to ProDOS via MLI QUIT ($65). This is the standard way a SYS
+        ; file exits: ProDOS takes control back and returns to the caller (the
+        ; Bitsy Bye menu, the ] prompt, or the boot sequence). A SYS file is
+        ; entered via JMP with no return address, so RTS would pop $FFFF and
+        ; fall into ROM $0000 -> BRK.
+        lda     #4
+        sta     $3420
+        lda     #0
+        sta     $3421
+        sta     $3422
+        sta     $3423
+        sta     $3424
+        jsr     MLI
+        !byte   $65
+        !word   $3420
+        jmp     quit_returned
+
+quit_returned:
+        jmp     quit_returned
+
+; Leave the result visible briefly before returning control to ProDOS/launcher.
+; Two 65536-iteration loops at roughly 1 MHz are about one second total.
+message_delay:
+        ldx #2
+md_outer:
+        lda #$00
+        sta md_count
+        sta md_count+1
+md_loop:
+        dec md_count
+        bne md_loop
+        dec md_count+1
+        bne md_loop
+        dex
+        bne md_outer
         rts
+md_count: !word 0
 
 ; =============================================================================
 ; Copy the driver to DRV_TARGET

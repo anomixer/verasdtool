@@ -1,0 +1,7 @@
+10 TEXT: HOME
+20 PRINT "VERASD FAT32 FILE CLIENT"
+30 PRINT "FAT32.SYSTEM is a VERA SD FAT32 file tool."
+40 PRINT "Run BRUN FAT32.SYSTEM to start it."
+50 PRINT "C catalogs; R reads; W writes TESTNOW.BIN."
+60 PRINT "Q returns to BASIC."
+70 END
