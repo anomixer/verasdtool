@@ -23,7 +23,6 @@
 ;   [Z] zero then format  write $00 to EVERY sector of the card first. This
 ;                         really does destroy the old data and it is slow,
 ;                         roughly a minute per 1.4 MB on a 1.02 MHz Apple II
-;   [S] SPI clock         toggle about 390 kHz / 12.5 MHz (see below)
 ;   [Q] quit              leave without touching the card
 ;
 ; Nothing is written until the word FORMAT has been typed, and afterwards the
@@ -33,10 +32,8 @@
 ; SPI CLOCK (real A2VERA hardware). SPI_CTRL (base+$1F) bit1 picks the transfer
 ; clock: 1 = about 390 kHz, 0 = 12.5 MHz. Formatting runs on the slow clock by
 ; default: on a 1.02 MHz Apple II the 6502 is the bottleneck either way, so
-; slow costs nothing, and on real hardware slow is the setting that works in
-; every slot. Press [S] for the fast clock on a card/slot pair you have already
-; qualified. BUSY polling is bounded and a timeout is sticky, so a dead card
-; fails in milliseconds instead of hanging (A2VERA documents the same lesson).
+; slow costs little, and on real hardware slow is the setting that works in
+; every slot. BUSY polling is bounded and a timeout is sticky.
 ;
 ; ASSEMBLER NOTES (the vendored asm6502.mjs is quirky - see AGENTS.md):
 ;   no indexed AND/ORA/EOR, no CMP with an indexed operand, no indexed
@@ -125,7 +122,6 @@ V_ZEROMODE   = VARS+$36     ; $01 = overwrite the whole card with $00 first
 V_VERERR     = VARS+$37     ; verify: number of sectors that did not match (4 bytes)
 V_STAGE      = VARS+$3B     ; stage number, shown on the stage line
 V_RETRY      = VARS+$3C     ; retry counter for the SD init commands
-V_MULTIW     = VARS+$3D     ; non-zero while a stage uses CMD25 multi-write
 V_DONE       = VARS+$40     ; progress: sectors written in this stage
 V_PCTTOT     = VARS+$44     ; progress: sectors in this stage
 V_PCTSTEP    = VARS+$48     ; progress: width of one percent, in sectors
@@ -172,7 +168,6 @@ LK_ZERO      = 0            ; LBA 0
 LK_PART      = 1            ; V_PART + argument
 LK_DATA      = 2            ; V_PART + data area + argument
 FL_FATSZ     = $80          ; then add V_FATSZ (steps FAT #1 over to FAT #2)
-FL_MULTI     = $40          ; write repeated template sectors with CMD25
 
 ; -----------------------------------------------------------------------------
 ; Apple II hardware
@@ -213,7 +208,7 @@ START:
     STA COL80ON
     STA STORE80OFF
     STA PAGE2OFF
-    LDA #$01                ; SPI chip select on, slow clock off (bit1)
+    LDA #$03                ; SPI chip select on, compatible slow clock (bit1)
     STA ZP_SDCLK
     JSR CLEAR_SCREEN
     JSR SET_CURSOR_HOME
@@ -1265,19 +1260,11 @@ IT1_OUT:
     RTS
 
 ; =============================================================================
-; STAGE_WRITE - write WRKBUF V_PCTTOT times starting at ZP_LBA, advancing the
-; LBA and the progress line as it goes. ESC stops between sectors, which leaves
-; a partially written card: the message that follows says so plainly.
+; STAGE_WRITE - write WRKBUF V_PCTTOT times starting at ZP_LBA. Use CMD24 for
+; every sector: Apple2TS supports CMD24 but not CMD25, and the extra command
+; frame is small beside a 512-byte transfer. ESC stops between sectors.
 ; =============================================================================
 STAGE_WRITE:
-    LDX ZP_STGIDX
-    LDA RF_TAB+7,X
-    AND #FL_MULTI
-    STA V_MULTIW
-    BEQ STW_NEXT
-    JSR SD_MULTI_BEGIN
-    LDA ZP_ERR
-    BNE STW_DONE
 STW_NEXT:
     LDA #$00
     STA RAMWRTOFF           ; SHOW_PROGRESS/PUTCH may have left RAMWRT on AUX
@@ -1290,13 +1277,7 @@ STW_NEXT:
     JSR CHECK_ESC
     LDA ZP_ABORT
     BNE STW_DONE
-    LDA V_MULTIW
-    BEQ STW_SINGLE
-    JSR SD_MULTI_BLOCK
-    JMP STW_WRITTEN
-STW_SINGLE:
     JSR SD_WRITE_SECTOR
-STW_WRITTEN:
     LDA ZP_ERR
     BNE STW_DONE
     JSR INC_LBA
@@ -1304,10 +1285,6 @@ STW_WRITTEN:
     JSR SHOW_PROGRESS
     JMP STW_NEXT
 STW_DONE:
-    LDA V_MULTIW
-    BEQ STW_OUT
-    JSR SD_MULTI_END
-STW_OUT:
     RTS
 
 INC_DONE:
@@ -1913,7 +1890,7 @@ SD_ARG_FROM_LBA:
 ; SD_INIT - take the card from power-on to ready. This is the exact proven
 ; sequence from verasdedit: select the card, then CMD0/CMD8/CMD55/ACMD41/CMD16.
 SD_INIT:
-    LDA #$01
+    LDA ZP_SDCLK            ; keep the clock shown on screen during SD commands
     LDY #$00
     STA (ZP_SPISTLO),Y
     ; CMD0: 40 00 00 00 00 95. Capture the R1 so a diagnostic can report whether
@@ -2016,7 +1993,25 @@ SD_READ_SECTOR:
 SRS_DATA:
     LDX #$00
 SRS_L0:
-    JSR SPI_READ_A
+    ; Stream the full sector with inline SPI polling. Keep SPI_WAIT's bounded
+    ; timeout behavior: set ZP_ERR and continue reading the controller byte.
+    LDA #$FF
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+    LDA #$00
+    STA ZP_SCR2
+    STA ZP_SCR3
+SRS_WAIT0:
+    LDA (ZP_SPISTLO),Y
+    BPL SRS_READY0
+    INC ZP_SCR2
+    BNE SRS_WAIT0
+    INC ZP_SCR3
+    BNE SRS_WAIT0
+    LDA #$01
+    STA ZP_ERR
+SRS_READY0:
+    LDA (ZP_SPIDATLO),Y
     STA ZP_TEMP
     TXA
     TAY
@@ -2027,7 +2022,23 @@ SRS_L0:
     INC ZP_BUFPG            ; second half of the sector, the next page
     LDX #$00
 SRS_L1:
-    JSR SPI_READ_A
+    LDA #$FF
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+    LDA #$00
+    STA ZP_SCR2
+    STA ZP_SCR3
+SRS_WAIT1:
+    LDA (ZP_SPISTLO),Y
+    BPL SRS_READY1
+    INC ZP_SCR2
+    BNE SRS_WAIT1
+    INC ZP_SCR3
+    BNE SRS_WAIT1
+    LDA #$01
+    STA ZP_ERR
+SRS_READY1:
+    LDA (ZP_SPIDATLO),Y
     STA ZP_TEMP
     TXA
     TAY
@@ -2069,19 +2080,49 @@ SD_WRITE_SECTOR:
     JSR SPI_SEND_A          ; CRC
     JSR SPI_READ_A          ; R1
     CMP #$00
-    BNE SWS_FAIL
+    BEQ SWS_DATA
+    JMP SWS_FAIL
+SWS_DATA:
     LDA #$FE                ; data token
     JSR SPI_SEND_A
     LDX #$00
 SWS_L0:
     LDA WRKBUF,X
-    JSR SPI_SEND_A
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+    LDA #$00
+    STA ZP_SCR2
+    STA ZP_SCR3
+SWS_WAIT0:
+    LDA (ZP_SPISTLO),Y
+    BPL SWS_READY0
+    INC ZP_SCR2
+    BNE SWS_WAIT0
+    INC ZP_SCR3
+    BNE SWS_WAIT0
+    LDA #$01
+    STA ZP_ERR
+SWS_READY0:
     INX
     BNE SWS_L0
     LDX #$00
 SWS_L1:
     LDA WRKBUF+256,X
-    JSR SPI_SEND_A
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+    LDA #$00
+    STA ZP_SCR2
+    STA ZP_SCR3
+SWS_WAIT1:
+    LDA (ZP_SPISTLO),Y
+    BPL SWS_READY1
+    INC ZP_SCR2
+    BNE SWS_WAIT1
+    INC ZP_SCR3
+    BNE SWS_WAIT1
+    LDA #$01
+    STA ZP_ERR
+SWS_READY1:
     INX
     BNE SWS_L1
     JSR SPI_SEND_A          ; the two CRC bytes
@@ -2110,66 +2151,6 @@ SWS_FREED:
 SWS_FAIL:
     LDA #$01
     STA ZP_ERR
-    RTS
-
-; CMD25 multi-block write support.  FAT free-space stages repeatedly send the
-; same all-zero WRKBUF, so one command frame can cover an entire FAT rather
-; than issuing CMD24 once per sector.
-SD_MULTI_BEGIN:
-    LDA #$00
-    STA ZP_ERR
-    STA RAMRDOFF
-    JSR SD_ARG_FROM_LBA
-    LDA #$59                ; CMD25 WRITE_MULTIPLE_BLOCK
-    JSR SPI_SEND_A
-    LDA V_ARG
-    JSR SPI_SEND_A
-    LDA V_ARG+1
-    JSR SPI_SEND_A
-    LDA V_ARG+2
-    JSR SPI_SEND_A
-    LDA V_ARG+3
-    JSR SPI_SEND_A
-    LDA #$FF
-    JSR SPI_SEND_A
-    JSR SPI_READ_A
-    CMP #$00
-    BEQ SMB_OUT
-    JMP SWS_FAIL
-SMB_OUT:
-    RTS
-
-; Send one CMD25 data block from WRKBUF.  CMD25 uses $FC, while CMD24 uses $FE.
-SD_MULTI_BLOCK:
-    LDA #$FC
-    JSR SPI_SEND_A
-    LDX #$00
-SMB_L0:
-    LDA WRKBUF,X
-    JSR SPI_SEND_A
-    INX
-    BNE SMB_L0
-    LDX #$00
-SMB_L1:
-    LDA WRKBUF+256,X
-    JSR SPI_SEND_A
-    INX
-    BNE SMB_L1
-    LDA #$FF
-    JSR SPI_SEND_A
-    JSR SPI_SEND_A
-    JSR SPI_READ_A
-    AND #$1F
-    CMP #$05
-    BEQ SMB_BUSY
-    JMP SWS_FAIL
-SMB_BUSY:
-    JMP SWS_BUSY
-
-; Terminate CMD25 after the last sector. The stop token is not a data block.
-SD_MULTI_END:
-    LDA #$FD
-    JSR SPI_SEND_A
     RTS
 
 ; GET_SD_TOTAL - the capacity in 512-byte sectors, from CMD9 (SEND_CSD).
@@ -3675,7 +3656,7 @@ RF_BYTES     = 96
 
 RF_TAB:
     !BYTE <MSG_STG_ZERO, >MSG_STG_ZERO, <BUILD_ZEROS, >BUILD_ZEROS
-    !BYTE CK_TOTAL, LK_ZERO, 0, FL_MULTI
+    !BYTE CK_TOTAL, LK_ZERO, 0, 0
     !BYTE <MSG_STG_MBR, >MSG_STG_MBR, <BUILD_MBR, >BUILD_MBR
     !BYTE CK_ONE, LK_ZERO, 0, 0
     !BYTE <MSG_STG_VBR, >MSG_STG_VBR, <BUILD_VBR, >BUILD_VBR
@@ -3689,15 +3670,15 @@ RF_TAB:
     !BYTE <MSG_STG_F1A, >MSG_STG_F1A, <BUILD_FAT0, >BUILD_FAT0
     !BYTE CK_ONE, LK_PART, 32, 0
     !BYTE <MSG_STG_F1B, >MSG_STG_F1B, <BUILD_ZEROS, >BUILD_ZEROS
-    !BYTE CK_FATSZ_M1, LK_PART, 33, FL_MULTI
+    !BYTE CK_FATSZ_M1, LK_PART, 33, 0
     !BYTE <MSG_STG_F2A, >MSG_STG_F2A, <BUILD_FAT0, >BUILD_FAT0
     !BYTE CK_ONE, LK_PART, 32, FL_FATSZ
     !BYTE <MSG_STG_F2B, >MSG_STG_F2B, <BUILD_ZEROS, >BUILD_ZEROS
-    !BYTE CK_FATSZ_M1, LK_PART, 33, FL_FATSZ+FL_MULTI
+    !BYTE CK_FATSZ_M1, LK_PART, 33, FL_FATSZ
     !BYTE <MSG_STG_ROOT, >MSG_STG_ROOT, <BUILD_ROOT, >BUILD_ROOT
     !BYTE CK_ONE, LK_DATA, 0, 0
     !BYTE <MSG_STG_RPAD, >MSG_STG_RPAD, <BUILD_ZEROS, >BUILD_ZEROS
-    !BYTE CK_SPC_M1, LK_DATA, 1, FL_MULTI
+    !BYTE CK_SPC_M1, LK_DATA, 1, 0
 RF_TABEND:
 
 ; -----------------------------------------------------------------------------

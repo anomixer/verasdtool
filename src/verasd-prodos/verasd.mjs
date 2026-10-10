@@ -234,7 +234,10 @@ disk[2 * 512 + 0x25] = fileCount & 0xff;
 disk[2 * 512 + 0x26] = (fileCount >> 8) & 0xff;
 
 // ------------------------------------------------------------ write outputs
-const outBoot = path.join(repoRoot, "VeraSD-IFS-ProDOS.po");
+const bootOutputArg = process.argv.find(arg => arg.startsWith("--boot-output="));
+const outBoot = bootOutputArg
+  ? path.resolve(bootOutputArg.slice("--boot-output=".length))
+  : path.join(repoRoot, "VeraSD-IFS-ProDOS.po");
 const outSd = path.join(repoRoot, "VeraSD-IFS-ProDOS.img");
 const createSd = !fs.existsSync(outSd) || process.argv.includes("--reset-sd");
 setProDOSFileTimestamps(disk, ["VERASD.SYSTEM", "VERASD.BIN", "STARTUP"]);

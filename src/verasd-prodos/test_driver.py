@@ -131,6 +131,9 @@ def main():
     card=CardMemory();cpu=run(card,buffer=0xDCA7)
     assert cpu.a == 0 and bytes(card.bank1[0xCA7:0xEA7]) == bytes(range(256))*2
     count+=1
+    card=CardMemory();cpu=run(card,buffer=0xCEA7)
+    assert cpu.a == 0 and (bytes(card.ram[0xCEA7:0xD000]) + bytes(card.bank1[:0xA7])) == bytes(range(256))*2
+    count+=1
     card=CardMemory();pattern=bytes(range(256))*2
     card.bank1[0xCA7:0xEA7]=pattern
     cpu=run(card,command=2,buffer=0xDCA7)

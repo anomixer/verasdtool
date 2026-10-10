@@ -319,6 +319,51 @@ busyok:
 
 ; --- 512-byte transfer -------------------------------------------------------
 sd_read_512:
+        ; Buffers ending below $D000 are in ordinary main RAM. The language
+        ; card bank switch in GATE_STORE is only needed for $D000-$DFFF.
+        ; A 512-byte read starting in page $CE with a nonzero offset can
+        ; cross into $D000, so only pages below $CE use the direct path.
+        lda zp_buf+1
+        cmp #$CE
+        bcc rd_direct
+        jmp rd_banked
+rd_direct:
+        ldy #0
+        ldx #2
+rd_direct_loop:
+        ; Keep Y as the buffer offset while addressing SPI registers at Y=0.
+        sty zp_sy
+        ldy #0
+        lda #$FF
+        sta (zp_dsp),Y
+        lda #0
+        sta sd_tmp0
+        sta sd_tmp1
+rd_direct_wait:
+        lda (zp_dsc),Y
+        bpl rd_direct_ready
+        inc sd_tmp0
+        bne rd_direct_wait
+        inc sd_tmp1
+        bne rd_direct_wait
+        lda #1
+        sta sd_err
+        sec
+        rts
+rd_direct_ready:
+        lda (zp_dsp),Y
+        ldy zp_sy
+        sta (zp_buf),Y
+        iny
+        bne rd_direct_loop
+        dex
+        beq rd_direct_done
+        inc zp_buf+1
+        jmp rd_direct_loop
+rd_direct_done:
+        dec zp_buf+1
+        jmp rd_crc
+rd_banked:
         ldy #0
 r0:     lda #$FF
         jsr spi_xfer
@@ -335,6 +380,7 @@ r1:     lda #$FF
         iny
         bne r1
         dec zp_buf+1
+rd_crc:
         lda #$FF
         jsr spi_xfer            ; the two CRC bytes
         bcs rd_err

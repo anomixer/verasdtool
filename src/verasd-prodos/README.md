@@ -5,7 +5,7 @@ Build: `node src/verasd-prodos/verasd.mjs` or `npm run build:prodos`. The boot d
 Boot the project-root `VeraSD-IFS-ProDOS.po`, configure the VERA SD image as the project-root `VeraSD-IFS-ProDOS.img`, then enter:
 
 ```text
-BRUN VERASD.SYSTEM
+-VERASD.SYSTEM
 CATALOG /VERASD
 ```
 
@@ -19,7 +19,7 @@ driver. `QUIT.SYSTEM` is kept as the final catalog entry so the chain returns
 to Bitsy Bye after the other startup SYS files finish. If no later SYS file
 exists or it cannot be loaded, the helper returns through ProDOS MLI `QUIT`.
 `VERASD.BIN` is also included as a ProDOS BIN file (file type `$06`, load
-address `$2000`). Run `BRUN VERASD.BIN` from Applesoft BASIC to install the same
+address `$2000`). Run `-VERASD.BIN` or `BRUN VERASD.BIN` from Applesoft BASIC to install the same
 driver and return to BASIC, then access files on the SD volume with ProDOS
 commands such as `CATALOG /VERASD`.
 The disk's `STARTUP` BAS file runs with BASIC.SYSTEM, installs the driver via
@@ -44,13 +44,15 @@ The build preserves an existing SD image. `node src/verasd-prodos/verasd.mjs --r
 
 The driver body lives in language-card bank 2 at $D400. A common-memory bridge at $FF00 switches banks and accesses ProDOS buffers in bank 1. The native /RAM device is removed from the device list because the bridge replaces its driver; auxiliary /RAM data itself is not erased. The installer refuses an unexpected /RAM driver vector. Interrupt code at $FF9B and above is preserved.
 
+For 512-byte reads into ordinary RAM below $CE00, the driver writes directly to the caller's buffer and polls SPI inline. Reads that can cross into language-card memory continue to use the bank-switching bridge. SPI remains at the compatible 390 kHz setting. This reduces CPU overhead for streaming clients such as 8 kHz PCM players, but sustained playback still depends on the host and SD device keeping up with the sample rate.
+
 This replaces the former $9000 implementation, which Copy II Plus overwrote after BYE. No BASIC memory reservation is needed. BYE does not uninstall this driver. Reboot restores the ordinary ProDOS environment; reinstallation in the same session is not supported.
 
 SDHC block addressing and SDSC byte addressing are supported. SPI runs at the slow setting, with bounded response and busy waits. Driver status reports the ProDOS volume size; out-of-range access is rejected before sending an SD command. This is a resident ProDOS block driver, not a FAT32 filesystem translator.
 
 ## Validation
 
-`npm run test:prodos` (or `python src/verasd-prodos/test_driver.py` and `python src/verasd-prodos/test_install.py`): 19 assembled-driver cases and five installer cases covering bank-1 buffers, SDHC/SDSC addressing, block bounds, errors, status, stack, zero page, interrupt and decimal flags, missing VERA, rollback, and third-party RAM-vector refusal.
+`npm run test:prodos` (or `python src/verasd-prodos/test_driver.py` and `python src/verasd-prodos/test_install.py`): 20 assembled-driver cases and five installer cases covering direct main-RAM reads, bank-1 buffers, SDHC/SDSC addressing, block bounds, errors, status, stack, zero page, interrupt and decimal flags, missing VERA, rollback, and third-party RAM-vector refusal.
 
 AppleWin ProDOS 2.4.3: installation and CATALOG show 65,535 blocks. After BYE, Copy II Plus 8.4 from slot 6 drive 2 catalogs slot 2 drive 1 and copies VERASD.SYSTEM from the boot disk to SD. Host-side extraction verifies all 2,392 bytes match verasd.bin. Real SD hardware has not been tested.
 

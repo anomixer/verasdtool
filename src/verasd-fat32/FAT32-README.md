@@ -54,6 +54,11 @@ the vendored `sd-protocol.inc`, `fat-filesystem-core.inc` and
 `fat32.generated.asm` and `fat32.labels.json` are useful for debugging; edit
 the sources rather than the generated assembly.
 
+The 512-byte sector read loop stores directly into its RAM buffer and polls SPI
+inline, while preserving the caller's X register and the bounded BUSY timeout.
+The SPI clock is unchanged. The effect on catalog and file-read time has not
+yet been measured on hardware.
+
 Supported mount layouts: raw FAT32 or the first FAT32 MBR partition, 512-byte
 sectors, one or two FAT copies, power-of-two cluster sizes below 128 sectors.
 An explicitly active FAT is honored. Bounds, bad clusters, truncated chains,

@@ -752,14 +752,27 @@ LOAD_SECTOR:
     BNE LOAD_FAIL
     LDX #$00
 LR_LOOP:
-    JSR SPI_READ_A
+    ; A sector buffer is in main RAM: clock and store inline per byte.
+    LDY #$00
+    LDA #$FF
+    STA (ZP_SPIDATLO),Y
+LR_WAIT0:
+    LDA (ZP_SPISTLO),Y
+    BMI LR_WAIT0
+    LDA (ZP_SPIDATLO),Y
     STA SECTOR0, X
     INX
     CPX #$00
     BNE LR_LOOP
     LDX #$00
 LR_LOOP2:
-    JSR SPI_READ_A
+    LDY #$00
+    LDA #$FF
+    STA (ZP_SPIDATLO),Y
+LR_WAIT1:
+    LDA (ZP_SPISTLO),Y
+    BMI LR_WAIT1
+    LDA (ZP_SPIDATLO),Y
     STA SECTOR1, X
     INX
     CPX #$00
@@ -2018,13 +2031,25 @@ CHECK_SD_UNCHANGED:
     BNE CH_FAIL
     LDX #$00
 CH_LOOP0:
-    JSR SPI_READ_A
+    LDY #$00
+    LDA #$FF
+    STA (ZP_SPIDATLO),Y
+CH_WAIT0:
+    LDA (ZP_SPISTLO),Y
+    BMI CH_WAIT0
+    LDA (ZP_SPIDATLO),Y
     STA SWAPBUF, X
     INX
     BNE CH_LOOP0
     LDX #$00
 CH_LOOP1:
-    JSR SPI_READ_A
+    LDY #$00
+    LDA #$FF
+    STA (ZP_SPIDATLO),Y
+CH_WAIT1:
+    LDA (ZP_SPISTLO),Y
+    BMI CH_WAIT1
+    LDA (ZP_SPIDATLO),Y
     STA SWAPBUF1, X
     INX
     BNE CH_LOOP1
@@ -2082,13 +2107,21 @@ WRITE_SECTOR:
     LDX #$00
 WS_LOOP0:
     LDA SECTOR0, X
-    JSR SPI_SEND_A
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+WS_WAIT0:
+    LDA (ZP_SPISTLO),Y
+    BMI WS_WAIT0
     INX
     BNE WS_LOOP0
     LDX #$00
 WS_LOOP1:
     LDA SECTOR1, X
-    JSR SPI_SEND_A
+    LDY #$00
+    STA (ZP_SPIDATLO),Y
+WS_WAIT1:
+    LDA (ZP_SPISTLO),Y
+    BMI WS_WAIT1
     INX
     BNE WS_LOOP1
     ; 2 CRC bytes

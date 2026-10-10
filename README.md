@@ -255,6 +255,8 @@ The editor has two states:
 * `W` writes **all 512 bytes** of the current sector (both pages) back via
   CMD24 (WRITE_SINGLE_BLOCK) — the guest sends the token `0xFE` + 512 data
   bytes + 2 CRC bytes.
+* Full-sector reads, comparison reads before writes, and writes now poll SPI
+  inline in their 512-byte transfer loops, avoiding per-byte routine calls.
 * After `W` the dirty indicator clears; `ESC` without `W` discards changes.
 
 <a id="verasdformat"></a>
@@ -265,7 +267,8 @@ A companion utility in this repository that formats a VERA-attached SD/MMC card 
 - **MBR + Partition**: Writes an MBR partition table (partition type `$0C`, FAT32 LBA) starting at LBA 2048.
 - **FAT32 Volume**: Formats VBR, FSInfo, backup VBR/FSInfo, FAT #1, FAT #2, and initializes root cluster 2.
 - **Root cleanup**: Clears every sector in the initial root directory cluster, preserving only the volume label.
-- **Fast repeated writes**: FAT free-space and root-padding stages use CMD25 multi-block writes through the VERA SD emulator.
+- **Compatible repeated writes**: FAT free-space and root-padding stages use CMD24 for each sector. Apple2TS implements CMD24 but not CMD25, which stopped the former formatter at the first FAT free-space sector.
+- **Sector transfer loops**: CMD17 reads and CMD24 data writes poll SPI inline per byte. Bounded timeout remains in use. The formatter initializes SPI at the compatible 390 kHz setting shown on screen. A user formatted a 100 MB SD image in Apple2TS in about 0:42 with this formatter logic; a later rebuild changed only the BASIC startup prompt to `Checking...` during SD detection, before any write confirmation. The separate Verify command has not yet been reported.
 - **Menu Options**:
   - `[1] Catalog SD`: Lists root directory 8.3 filenames and file sizes.
   - `[2] Format SD`: Quick format. Requires typing `FORMAT` + `RETURN` to confirm; `ESC` aborts.
@@ -299,9 +302,15 @@ shown above.
   cannot be addressed. FAT32 and partition tables are not supported.
 - **Hardware:** detects VERA in slot 2 or 4 and supports SDHC block addressing
   and SDSC byte addressing.
+- **Streaming read path:** 512-byte reads whose buffer starts below page `$CE`
+  write directly to the caller's buffer and poll SPI inline. Reads starting at
+  `$CE00` or above keep the bank-switching path for transfers that may cross
+  `$D000`; writes continue through that path. The driver body stays in
+  language-card bank 2 at `$D400`, with its bridge at `$FF00`. SPI remains at
+  390 kHz; the improvement comes from lower CPU overhead per byte.
 - **File type:** `VERASD.SYSTEM` is type `$FF` (SYS), so ProDOS launchers such as Bitsy Bye can execute it.
   After displaying the install result, it loads the next root-directory `.SYSTEM` file (for example `CLOCK.SYSTEM`, then `DESKTOP.SYSTEM`) whether installation succeeded or failed. Its temporary handoff helper runs at `$1000` and is not part of the resident driver. `QUIT.SYSTEM` is the final catalog entry, returning to Bitsy Bye after startup; MLI QUIT (`$65`) is used only when no next SYS can be loaded. The chain to A2Desktop was verified in AppleWin with the SD image mounted in slot 2 and with VERA present but no SD image.
-- **BASIC entry:** `VERASD.BIN` is also included as type `$06` (BIN), load address `$2000`. From Applesoft BASIC, run `BRUN VERASD.BIN`; it installs the driver and returns to BASIC, where SD files can be accessed through ProDOS commands.
+- **BASIC entry:** `VERASD.BIN` is also included as type `$06` (BIN), load address `$2000`. From Applesoft BASIC, run `-VERASD.BIN` or `BRUN VERASD.BIN`; it installs the driver and returns to BASIC, where SD files can be accessed through ProDOS commands. Run the SYS file with `-VERASD.SYSTEM`, not `BRUN`.
 - **Startup menu:** `STARTUP` is a BAS file auto-run by `BASIC.SYSTEM`. It detects VERA in slot 2 or 4, initializes the SD card by running `VERASD.BIN`, then offers `CATALOG SD Card` or `Run A2Desktop` for the detected slot. The driver is already loaded before the menu appears. The catalog lists `BASIC.SYSTEM` first and `STARTUP` second, with `QUIT.SYSTEM` last.
 - **Boot disk volume name:** `VERASDIFSPRODOS`.
 - **Build**:
@@ -310,6 +319,10 @@ shown above.
   npm run build:prodos             # any platform with Node.js
   node src/verasd-prodos/verasd.mjs
   ```
+  Pass `--boot-output=<path>` to the Node.js builder to write the boot disk to
+  another path. To use a rebuilt driver, boot the new `.po` or copy its
+  `VERASD.SYSTEM` and `VERASD.BIN` to the boot volume, then reboot so the
+  resident driver is reinstalled.
 - **Running in AppleWin**:
   ```powershell
   if (-not (Test-Path VeraSD-IFS-ProDOS.img)) { Expand-Archive VeraSD-IFS-ProDOS.img.zip -DestinationPath . }
@@ -322,7 +335,12 @@ shown above.
   The build preserves the SD image; `--reset-sd` recreates it as an empty
   ProDOS volume.
 - **Tests:** `npm run test:prodos` runs the assembled-driver and installer
-  regression suites (Python and `py65` required).
+  regression suites (Python and `py65` required). The driver suite covers 20
+  cases, including a read buffer at `$CEA7` that crosses `$D000`.
+- **Playback observation:** in the user's A2Desktop/VERA SD setup, this driver
+  with veramusic's SD4 8 kHz PCM player advanced the displayed `T:` by 1:00
+  during one minute of wall-clock playback; the status row and hotkeys worked.
+  This is an observed result for that setup, not a guarantee for every SD card.
 - The SYS build uses `src/verasd-prodos/verasd_sys.asm`; `verasd.asm` is the
   legacy BRUN entry point and ends with `RTS`, which is invalid when ProDOS
   launches it as a SYS file.
@@ -347,6 +365,8 @@ cannot address the FAT32 volume directly.
 - **Current commands:** `C` catalogs root 8.3 names; `R` reads a named file and
   displays its size, first bytes, and checksum; `W` followed by `Y` runs the
   test write against preallocated 1,024-byte `TESTNOW.BIN`; `Q` returns to BASIC.
+- **Sector reads:** the 512-byte read loop polls SPI inline and stores directly
+  to the RAM buffer, while preserving its timeout and caller registers.
 - **Volume support:** raw FAT32 or the first FAT32 MBR partition, 512-byte
   sectors, with 32-bit sector addresses. The 128 MiB fixture exercises
   fragmented files located beyond 32 MiB.
@@ -576,6 +596,8 @@ nibble 閃爍、ASCII 欄游標字元閃爍，即使該 byte 已改過（反白�
 
 * `W` 透過 CMD24（WRITE_SINGLE_BLOCK）把目前 sector 的**全部 512 bytes**
   （兩頁）寫回——guest 送 token `0xFE` + 512 bytes data + 2 bytes CRC。
+* 整個 sector 的讀取、寫入前比對與寫入迴圈，已改為在迴圈內直接輪詢 SPI，
+  減少逐位元組呼叫 routine 的 CPU 開銷。
 * `W` 後 dirty 指示清除；未 `W` 就 `ESC` 則捨棄修改。
 
 <a id="cn-verasdformat"></a>
@@ -585,6 +607,7 @@ nibble 閃爍、ASCII 欄游標字元閃爍，即使該 byte 已改過（反白�
 
 - **MBR 分割區**：建立 MBR 分割表，自 LBA 2048 起建立類型 `$0C`（FAT32 LBA）主要分割區。
 - **FAT32 磁區結構**：依序寫入 VBR（開機磁區）、FSInfo、備份開機磁區、FAT #1、FAT #2，並初始化根目錄第 2 cluster。
+- **磁區傳輸迴圈**：CMD17 讀取及 CMD24 寫入時，在迴圈內直接輪詢 SPI，保留原有逾時處理。FAT 空白區與根目錄補齊改為逐個磁區執行 CMD24，避開 Apple2TS 尚未實作的 CMD25。Format 以相容慢速 390 kHz 初始化 SPI；使用者已用這版格式化邏輯在 Apple2TS 完成 100 MB SD 映像格式化，耗時約 0:42。之後重新打包時只把 BASIC 啟動提示改為 `Checking...`，表示尚在偵測 SD 卡、未開始寫入；選單中的 Verify 尚未回報結果。
 - **功能選單**：
   - `[1] Catalog SD`：列出根目錄 8.3 格式檔名與檔案大小。
   - `[2] Format SD`：快速格式化。需手動鍵入 `FORMAT` 並按 `RETURN` 確認執行，按 `ESC` 隨時取消。
@@ -614,18 +637,32 @@ ProDOS 程式和 Copy II Plus 使用；容量上限為 65,535 個 512-byte block
 完整 ProDOS driver 專案位於 `src/verasd-prodos/`。使用
 `build.bat prodos` 或 `npm run build:prodos` 建置，再以
 `npm run test:prodos` 執行組譯後 driver 與 installer 回歸測試（需要 Python
-與 py65）。開機 `VeraSD-IFS-ProDOS.po` 後執行 `BRUN VERASD.SYSTEM`。
-開機磁碟區名稱為 `VERASDIFSPRODOS`；安裝訊息會停留約一秒再返回 Bitsy Bye。
+與 py65）。開機 `VeraSD-IFS-ProDOS.po` 會自動執行 STARTUP 並安裝 driver；
+在 BASIC 可手動執行 `-VERASD.BIN` 或 `BRUN VERASD.BIN`；SYS 格式的
+`VERASD.SYSTEM` 則用 `-VERASD.SYSTEM`，不能用 `BRUN`。
+開機磁碟區名稱為 `VERASDIFSPRODOS`；由 Bitsy Bye 啟動 SYS 安裝程式時，
+安裝訊息會停留約一秒，再接續啟動下一個 `.SYSTEM`。
 
 SD image 是 32 MiB raw ProDOS volume，提供 65,535 個 512-byte blocks。
 常駐 driver 使用 language card bank 2，已測試 ProDOS BASIC 和 BYE 後的
 Copy II Plus 流程。建置會保留 image 中的檔案；`--reset-sd` 會重建空卷冊。
+
+快速讀取路徑適用於起始頁低於 `$CE` 的 512-byte `READ_BLOCK` 緩衝區：
+直接寫入緩衝區，並在迴圈內輪詢 SPI。起始位址在 `$CE00` 以上時，仍使用
+bank 切換路徑，以處理可能跨越 `$D000` 的讀取；寫入也維持原路徑。SPI
+仍為 390 kHz，效能提升來自減少 CPU 每個位元組的處理量。在使用者的
+A2Desktop／VERA SD 環境中，搭配 veramusic 的 SD4 8 kHz PCM player，
+實際播放一分鐘時畫面 `T:` 前進 1:00，狀態列與熱鍵正常；此為該環境的實測結果。
+driver 測試目前有 20 項，包含從 `$CEA7` 跨到 `$D000` 的緩衝區案例。
 
 - **建置方式**：
   ```powershell
   build.bat prodos                         # Windows 一鍵建置
   node src/verasd-prodos/verasd.mjs        # 跨平台建置
   ```
+  Node.js 建置指令可加 `--boot-output=<path>`，將開機磁碟輸出至其他路徑。
+  更新 driver 後，請用新 `.po` 開機，或將新 `VERASD.SYSTEM` 和 `VERASD.BIN`
+  複製到開機磁碟再重新開機，讓常駐 driver 重新安裝。
 - **AppleWin 執行**：
   ```powershell
   if (-not (Test-Path VeraSD-IFS-ProDOS.img)) { Expand-Archive VeraSD-IFS-ProDOS.img.zip -DestinationPath . }
@@ -662,6 +699,8 @@ ProDOS base image 與 FAT32/SD 原始碼模組，不依賴另一個 a2vera check
 目前程式能列目錄、讀檔及改寫預先配置的檔案，尚未登錄 ProDOS 磁碟裝置；
 因此 BASIC CATALOG 和 Copy II Plus 還不能直接存取 FAT32。詳細功能與限制見
 `src/verasd-fat32/FAT32-README.md`。執行 `npm run test:fat32` 需要 Python 與 py65。
+512-byte 磁區讀取已改為直接寫入 RAM，並在迴圈內輪詢 SPI，以減少逐位元組
+routine 呼叫；逾時處理維持原狀，實際速度仍需量測。
 
 - **建置方式**：
   ```powershell

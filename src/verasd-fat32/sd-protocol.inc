@@ -472,22 +472,46 @@ busyok:
 
 ; --- 512-byte transfer -------------------------------------------------------
 sd_read_512:
+        ; FAT32 buffers are ordinary RAM. Poll SPI inline while transferring
+        ; each byte, avoiding two subroutine calls and register saves per byte.
+        ; Preserve X because filesystem callers use it across block reads.
+        stx zp_sx
         ldy #0
-r0:     lda #$FF
-        jsr spi_xfer
-        bcs rd_err
-        jsr GATE_STORE
+        ldx #2
+rd_fast_loop:
+        sty zp_sy
+        ldy #0
+        lda #$FF
+        sta (zp_dsp),Y
+        lda #0
+        sta sd_tmp0
+        sta sd_tmp1
+rd_fast_wait:
+        lda (zp_dsc),Y
+        bpl rd_fast_ready
+        inc sd_tmp0
+        bne rd_fast_wait
+        inc sd_tmp1
+        bne rd_fast_wait
+        lda #1
+        sta sd_err
+        ldx zp_sx
+        ldy zp_sy
+        sec
+        rts
+rd_fast_ready:
+        lda (zp_dsp),Y
+        ldy zp_sy
+        sta (zp_buf),Y
         iny
-        bne r0
+        bne rd_fast_loop
+        dex
+        beq rd_fast_done
         inc zp_buf+1
-        ldy #0
-r1:     lda #$FF
-        jsr spi_xfer
-        bcs rd_err
-        jsr GATE_STORE
-        iny
-        bne r1
+        jmp rd_fast_loop
+rd_fast_done:
         dec zp_buf+1
+        ldx zp_sx
         lda #$FF
         jsr spi_xfer            ; the two CRC bytes
         bcs rd_err
