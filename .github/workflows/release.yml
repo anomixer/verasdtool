@@ -1,0 +1,53 @@
+name: Publish tagged release
+
+# Creates a GitHub release when a version tag is pushed. The tag checkout
+# supplies the exact disk images, and RELEASE-<tag>.md supplies the notes and
+# release title (its first line). This keeps release assets reproducible from
+# the tagged commit instead of relying on files uploaded from a workstation.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create release from tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          NOTES="RELEASE-${TAG}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "Missing release notes: $NOTES" >&2
+            exit 1
+          fi
+          TITLE="$(sed -n '1s/^# //p' "$NOTES")"
+          ASSETS=(
+            verasdedit.po
+            verasdformat.po
+            VeraSD-IFS-ProDOS.po
+            VeraSD-IFS-FAT32.po
+            VeraSD-IFS-ProDOS.img.zip
+            VeraSD-IFS-FAT32.img.zip
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES"
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes-file "$NOTES" \
+              --verify-tag \
+              "${ASSETS[@]}"
+          fi

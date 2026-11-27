@@ -24,3 +24,6 @@ test-sd.img
 !VeraSD-IFS-FAT32.png
 !VeraSD-IFS-FAT32.img.zip
 !VeraSD-IFS-ProDOS.img.zip
+
+# Landing-page assets (kept tracked despite *.png above)
+!docs/assets/*.png

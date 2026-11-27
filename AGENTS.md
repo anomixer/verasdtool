@@ -434,6 +434,19 @@ its buffers and scratch space.
     `V_PCT`/`V_PCT+1` but `PRINT_DEC32W` reads 4 bytes, so `V_PCT+2`/`+3`
     leaked stale RAM into the printed percent. **Fixed**: zero `V_PCT..+3`.
 
+12. **`K_32` was decimal 20, not the 32 reserved sectors the BPB uses.** The
+    geometry helpers (`CG_AVAIL`) read `K_32` both to subtract the reserved
+    sectors and to build the data start, so every computed value was 6 clusters
+    and 12 sectors off: the layout screen showed `100574`/`3652` on a 100 MiB
+    card and `129872`/`4100` on a 128 MiB card, and `BUILD_FSINFO` wrote
+    `129021` free clusters instead of `129015`. The written VBR still said 32
+    reserved sectors because that field is a fixed template, which made the
+    volume internally inconsistent. **Fixed**: `K_32` is now `32, 00, 00, 00`.
+    Verified on Apple2TS and AppleWin for both 100 MiB and 128 MiB: layout,
+    BPB, FSInfo free count and root LBA now agree (`100568`/`3664` and
+    `129016`/`4112`). `PRINT_DEC32W` also forces `RAMRDOFF` so the display can
+    never read a stale AUX copy.
+
 ## Current state
 
 - **Working:**

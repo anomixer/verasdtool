@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VeraSDTool — four Apple II tools for VERA SD cards</title>
+<meta name="description" content="A pure-6502 VERA SD toolkit for the Apple II: a hex sector editor, a FAT32 formatter, a resident ProDOS 8 block driver and a preliminary FAT32 client. Boot every disk in Apple2TS." />
+<link rel="canonical" href="https://anomixer.github.io/verasdtool/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="VeraSDTool — VERA SD toolkit for the Apple II" />
+<meta property="og:description" content="Hex sector editor, FAT32 formatter, resident ProDOS block driver and preliminary FAT32 client — pure 6502, straight over the VERA card's SD/MMC SPI." />
+<meta property="og:url" content="https://anomixer.github.io/verasdtool/" />
+<meta property="og:image" content="https://anomixer.github.io/verasdtool/assets/verasdedit.png" />
+<meta property="og:image:alt" content="VeraSDEdit showing a FAT32 boot sector as hex and ASCII in AppleWin" />
+<meta property="og:image:width" content="697" />
+<meta property="og:image:height" content="520" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="theme-color" content="#05080b" />
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+<style>
+  :root {
+    --bg: #05080b;
+    --panel: #0c1118;
+    --panel-2: #101722;
+    --line: #1f2a3a;
+    --line-soft: #17202d;
+    --text: #e9eff7;
+    --muted: #9aa8ba;
+    --green: #5ee69b;
+    --cyan: #39d5ff;
+    --amber: #ffc45c;
+    --radius: 16px;
+    --maxw: 1120px;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.62;
+    background:
+      radial-gradient(1100px 560px at 84% -10%, rgba(94, 230, 155, .15), transparent 62%),
+      radial-gradient(900px 520px at 0% -6%, rgba(57, 213, 255, .13), transparent 60%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  a { color: inherit; }
+
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 4px; }
+
+  section, footer { scroll-margin-top: 76px; }
+
+  img, svg { max-width: 100%; }
+
+  code {
+    font-family: var(--mono); font-size: .88em; color: #dcecf4;
+    background: rgba(57, 213, 255, .08); border: 1px solid var(--line-soft);
+    padding: 1px 5px; border-radius: 5px;
+  }
+
+  .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  .skip {
+    position: absolute; left: 12px; top: -60px; z-index: 20;
+    padding: 10px 14px; border-radius: 10px; background: var(--green); color: #03150b;
+    font-weight: 700; text-decoration: none; transition: top .15s ease;
+  }
+  .skip:focus { top: 12px; }
+
+  /* ---------- header ---------- */
+
+  .site-header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(5, 8, 11, .74);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .site-header .wrap {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    height: 62px;
+  }
+  .brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; display: block; }
+  .brand span {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    letter-spacing: .18em; text-transform: uppercase;
+  }
+  .brand small {
+    display: block; font-size: 10px; letter-spacing: .13em; color: var(--muted);
+    font-weight: 500; margin-top: 1px;
+  }
+
+  .nav { display: flex; align-items: center; gap: 22px; overflow-x: auto; }
+  .nav a {
+    font-size: 13.5px; color: var(--muted); text-decoration: none; white-space: nowrap;
+    padding: 6px 0; border-bottom: 1px solid transparent; transition: color .15s ease, border-color .15s ease;
+  }
+  .nav a:hover { color: var(--text); border-bottom-color: var(--green); }
+  .nav a.gh { color: var(--text); font-family: var(--mono); font-size: 12px; letter-spacing: .06em; }
+
+  /* ---------- hero ---------- */
+
+  .hero { padding: 74px 0 30px; }
+  .hero-grid {
+    display: grid; grid-template-columns: 1.06fr .94fr; gap: 56px; align-items: center;
+  }
+  .hero-grid > * { min-width: 0; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px; margin: 0 0 22px;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--cyan);
+  }
+  .eyebrow .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 0 4px rgba(57, 213, 255, .16);
+  }
+
+  h1 {
+    margin: 0 0 20px; font-size: clamp(2.5rem, 5.6vw, 4.05rem);
+    line-height: 1.04; letter-spacing: -.035em; font-weight: 800;
+    text-wrap: balance;
+  }
+  .grad {
+    background: linear-gradient(100deg, var(--green), var(--cyan) 52%, var(--amber));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+  .lede { margin: 0; max-width: 56ch; color: var(--muted); font-size: 1.06rem; }
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 18px; border-radius: 12px; text-decoration: none;
+    font-size: 14.5px; font-weight: 650; letter-spacing: -.01em;
+    border: 1px solid transparent; transition: transform .15s ease, filter .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .btn .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 999px; opacity: .85;
+  }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--green), #6fe8f5); color: #031510;
+    box-shadow: 0 16px 38px -18px rgba(94, 230, 155, .85);
+  }
+  .btn.primary .tag { background: rgba(0, 0, 0, .18); }
+  .btn.secondary {
+    background: rgba(15, 22, 31, .78); border-color: var(--line); color: var(--text);
+  }
+  .btn.secondary .tag { background: rgba(57, 213, 255, .12); color: var(--cyan); }
+  .btn:hover { transform: translateY(-2px); filter: brightness(1.06); }
+  .btn.secondary:hover { border-color: var(--cyan); }
+  .btn.flat { background: none; border-color: var(--line); color: var(--muted); font-weight: 550; padding: 11px 14px; font-size: 13px; }
+  .btn.flat:hover { color: var(--text); border-color: var(--line); transform: none; }
+
+  .hint { margin: 16px 0 0; font-size: 12.5px; color: #8595a8; max-width: 54ch; }
+
+  .specs {
+    display: flex; flex-wrap: wrap; gap: 7px; margin: 24px 0 0; padding: 0; list-style: none;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: #93a2b4;
+  }
+  .specs li { padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(12, 17, 24, .7); }
+  .specs b { color: var(--green); font-weight: 600; }
+
+  .hero-shot {
+    margin: 0; padding: 10px; border-radius: 18px;
+    background: linear-gradient(180deg, rgba(94, 230, 155, .16), rgba(57, 213, 255, .1) 55%, transparent);
+    border: 1px solid var(--line);
+    box-shadow: 0 30px 70px -40px rgba(0, 0, 0, .95);
+  }
+  .hero-shot img {
+    display: block; width: 100%; height: auto; border-radius: 10px;
+    image-rendering: pixelated; background: #000;
+  }
+  .hero-shot figcaption {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 6px 2px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: #8f9fb1;
+  }
+  .hero-shot figcaption b { color: var(--amber); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+
+  section { padding: 58px 0; }
+
+  .section-head { max-width: 64ch; margin-bottom: 30px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--green); margin: 0 0 10px;
+  }
+  h2 { margin: 0 0 12px; font-size: clamp(1.65rem, 3.1vw, 2.25rem); letter-spacing: -.022em; line-height: 1.15; text-wrap: balance; }
+  .section-head p { margin: 0; color: var(--muted); }
+
+  .rule { height: 1px; background: linear-gradient(90deg, var(--line), transparent); margin: 0; border: 0; }
+
+  /* ---------- image cards ---------- */
+
+  .image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .image-grid > * { min-width: 0; }
+
+  .image-card {
+    display: flex; flex-direction: column; overflow: hidden;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    transition: border-color .18s ease, transform .18s ease;
+  }
+  .image-card:hover { border-color: #33415a; transform: translateY(-2px); }
+
+  .image-card-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 20px 22px 0;
+  }
+  .image-card-head h3 { margin: 0; font-family: var(--mono); font-size: 1.05rem; letter-spacing: -.01em; }
+  .size {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--amber); white-space: nowrap;
+  }
+
+  .image-card figure { margin: 16px 0 0; }
+  .image-card figure img {
+    display: block; width: 100%; height: auto; image-rendering: pixelated;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    background: #000;
+  }
+
+  .image-card-body { padding: 18px 22px 0; }
+  .image-card-body p { margin: 0 0 14px; color: var(--muted); font-size: .95rem; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .tags li {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: #9dabbd; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;
+  }
+  .tags li.is-wip { color: var(--amber); border-color: rgba(255, 196, 92, .38); background: rgba(255, 196, 92, .06); }
+
+  .image-card-actions {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 18px 22px 22px; margin-top: auto;
+  }
+
+  /* ---------- controls / panels ---------- */
+
+  .two-col { display: grid; grid-template-columns: 1.1fr .9fr; gap: 26px; align-items: start; }
+  .two-col > * { min-width: 0; }
+
+  .keys {
+    list-style: none; margin: 0; padding: 8px 22px 20px;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .keys li {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 11px 0; border-bottom: 1px solid var(--line-soft); font-size: .92rem; color: var(--muted);
+  }
+  .keys li:last-child { border-bottom: 0; }
+  .keys .combo { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  .keys b { color: var(--text); font-weight: 600; }
+  kbd {
+    font-family: var(--mono); font-size: 11px; line-height: 1;
+    padding: 5px 7px; border-radius: 6px; color: #fff;
+    background: #18202c; border: 1px solid #2c3b50; border-bottom-width: 2px;
+    white-space: nowrap;
+  }
+
+  .panel {
+    padding: 22px; border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line);
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 1rem; letter-spacing: -.01em; }
+  .panel p { margin: 0 0 12px; color: var(--muted); font-size: .92rem; }
+  .panel p:last-child { margin-bottom: 0; }
+
+  .plain-list { list-style: none; margin: 0 0 14px; padding: 0; }
+  .plain-list li {
+    display: flex; gap: 12px; align-items: baseline;
+    padding: 8px 0; border-bottom: 1px solid var(--line-soft);
+    font-size: .9rem; color: var(--muted);
+  }
+  .plain-list li:last-child { border-bottom: 0; }
+  .plain-list code { flex: 0 0 auto; min-width: 26px; text-align: center; color: var(--cyan); }
+
+  .mini-keys { list-style: none; margin: 0 0 14px; padding: 0; }
+  .mini-keys li {
+    display: flex; gap: 12px; align-items: baseline; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: .88rem; color: var(--muted);
+  }
+  .mini-keys li:last-child { border-bottom: 0; }
+  .mini-keys .combo { display: flex; gap: 4px; flex: 0 0 auto; white-space: nowrap; }
+
+  .status-line {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: #cfdae6;
+  }
+  .status-line span { padding: 5px 8px; border-radius: 6px; background: #070b10; border: 1px solid var(--line); }
+  .status-line span b { color: var(--green); font-weight: 600; }
+
+  /* ---------- tables ---------- */
+
+  .table-panel {
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  }
+  .table-scroll { overflow-x: auto; }
+  table.stages { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 580px; }
+  table.stages caption {
+    caption-side: top; text-align: left; padding: 18px 20px 8px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  table.stages th {
+    text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--green); font-weight: 600; white-space: nowrap;
+  }
+  table.stages td { padding: 10px 20px; border-bottom: 1px solid var(--line-soft); color: var(--muted); vertical-align: top; }
+  table.stages tr:last-child td { border-bottom: 0; }
+  table.stages td.num { font-family: var(--mono); color: var(--amber); white-space: nowrap; }
+  table.stages td.title { color: var(--text); font-weight: 600; white-space: nowrap; }
+
+  /* ---------- features ---------- */
+
+  .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .feat-grid > * { min-width: 0; }
+  .feat-grid.three { grid-template-columns: repeat(3, 1fr); }
+  .feat {
+    padding: 22px; border-radius: 14px; border: 1px solid var(--line);
+    background: rgba(10, 15, 21, .85);
+  }
+  .feat .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--cyan);
+  }
+  .feat h3 { margin: 8px 0 8px; font-size: 1.02rem; letter-spacing: -.012em; }
+  .feat p { margin: 0; color: var(--muted); font-size: .92rem; }
+
+  /* ---------- drivers ---------- */
+
+  .driver-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .driver-grid > * { min-width: 0; }
+  .driver {
+    padding: 24px; border-radius: var(--radius); border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(14, 20, 28, .95), rgba(10, 15, 21, .95));
+  }
+  .driver-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .driver h3 { margin: 0; font-family: var(--mono); font-size: 1rem; letter-spacing: -.01em; }
+  .driver .kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--green); }
+  .driver .kind.wip { color: var(--amber); }
+  .driver > p { margin: 10px 0 0; color: var(--muted); font-size: .92rem; }
+  .driver ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: .89rem; }
+  .driver ul li { margin-bottom: 6px; }
+  .driver ul li:last-child { margin-bottom: 0; }
+  .driver ul li b { color: var(--text); font-weight: 600; }
+
+  /* ---------- build ---------- */
+
+  .code {
+    margin: 0 0 18px; padding: 20px 22px; overflow-x: auto;
+    background: #070b10; border: 1px solid var(--line); border-radius: 14px;
+    font-family: var(--mono); font-size: 12.8px; line-height: 1.75; color: #d5e2ea;
+  }
+  .code .c { color: #6f8094; }
+  .code .p { color: var(--green); }
+  .code .s { color: var(--amber); }
+  .build-notes { margin: 0; padding-left: 20px; color: var(--muted); font-size: .92rem; }
+  .build-notes li { margin-bottom: 6px; }
+  .build-notes code { font-family: var(--mono); font-size: .86em; color: var(--text); }
+
+  /* ---------- footer ---------- */
+
+  .site-footer {
+    margin-top: 30px; padding: 34px 0 46px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 13px; color: #8494a6;
+  }
+  .footer-top { display: flex; flex-wrap: wrap; gap: 18px 34px; justify-content: space-between; }
+  .footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
+  .footer-links a { text-decoration: none; border-bottom: 1px solid transparent; }
+  .footer-links a:hover { color: var(--text); border-bottom-color: var(--line); }
+  .credits { margin: 18px 0 0; max-width: 82ch; font-size: 12.5px; color: #7c8d9f; }
+  .credits a { color: #9dabbd; text-decoration: none; }
+  .credits a:hover { color: var(--cyan); }
+
+  /* ---------- responsive ---------- */
+
+  @media (max-width: 960px) {
+    .feat-grid.three { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 900px) {
+    .hero { padding-top: 46px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 34px; }
+    .image-grid, .two-col, .feat-grid, .driver-grid { grid-template-columns: 1fr; }
+    .nav a:not(.gh):not(.play) { display: none; }
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 0 18px; }
+    section { padding: 42px 0; }
+    .site-header .wrap { height: 56px; }
+    .brand small { display: none; }
+    .keys { padding-left: 16px; padding-right: 16px; }
+    .keys li { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .keys .combo { justify-content: flex-start; }
+    .btn { width: 100%; justify-content: space-between; }
+    .image-card-actions .btn { width: auto; }
+    .feat-grid.three { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <img src="assets/logo.svg" alt="" width="30" height="30" />
+      <span>VeraSDTool<small>Apple II · 6502 · VERA SD</small></span>
+    </a>
+    <nav class="nav" aria-label="Page sections">
+      <a href="#tools">Tools</a>
+      <a href="#editor">Editor</a>
+      <a href="#formatter">Formatter</a>
+      <a href="#drivers">Drivers</a>
+      <a href="#how">Under the hood</a>
+      <a href="#build">Build</a>
+      <a class="gh" href="https://github.com/anomixer/verasdtool">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow"><span class="dot"></span>A2VERA · Apple //e · VERA SD/MMC SPI</p>
+        <h1>Four tools.<br />One <span class="grad">SD card</span>.</h1>
+        <p class="lede">
+          A <strong>hex sector editor</strong>, a <strong>FAT32 formatter</strong>, a <strong>resident
+          ProDOS block driver</strong> and a <strong>preliminary FAT32 client</strong> — written in pure
+          6502 and talking straight to the VERA card’s SD/MMC SPI. Every disk boots here, in your browser.
+        </p>
+
+        <div class="cta">
+          <a class="btn primary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdedit.po" target="_blank" rel="noopener">
+            ▶ Run verasdedit.po <span class="tag">Apple2TS</span>
+          </a>
+          <a class="btn secondary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdformat.po" target="_blank" rel="noopener">
+            ▶ Run verasdformat.po <span class="tag">Apple2TS</span>
+          </a>
+        </div>
+
+        <p class="hint">
+          Each link opens Apple2TS in a new tab with VERA in slot 2 and a disposable SD card image already
+          mounted, streamed from this repository. The first boot pulls that card from GitHub — 128 MiB FAT32
+          for the editor, formatter, and FAT32 client, 32 MiB ProDOS for the block driver — so give it a few
+          seconds; click the emulator once for keyboard focus and audio.
+        </p>
+
+        <ul class="specs" aria-label="At a glance">
+          <li><b>4</b> bootable disks</li>
+          <li><b>32-bit</b> LBA</li>
+          <li><b>65,535</b> ProDOS blocks</li>
+          <li><b>128 MiB</b> FAT32 test card</li>
+        </ul>
+      </div>
+
+      <figure class="hero-shot">
+        <img src="assets/verasdedit.png" alt="VeraSDEdit in AppleWin: the LBA 800 FAT32 boot sector drawn as 16 hex bytes and an ASCII dump, with the editor cursor flashing in the ASCII pane" width="697" height="520" />
+        <figcaption><span>verasdedit.po — LBA 800</span><b>hex + ASCII · 80 columns</b></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="tools">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">The toolkit</p>
+        <h2>Four bootable disks, four jobs</h2>
+        <p>
+          All four are bootable ProDOS 2.4.3 volumes that probe the VERA card in slot 2 (<code>$C200</code>)
+          then slot 4 (<code>$C400</code>) and address the SPI registers at <code>base+$1E</code> /
+          <code>base+$1F</code>. Run them from the floppy image, or from a directory on your own ProDOS disk.
+        </p>
+      </div>
+
+      <div class="image-grid">
+        <article class="image-card">
+          <div class="image-card-head">
+            <h3>verasdedit.po</h3>
+            <span class="size">140 KiB · floppy</span>
+          </div>
+          <figure>
+            <img src="assets/verasdedit.png" alt="VeraSDEdit showing its hex and ASCII view of a FAT32 boot sector" width="697" height="520" loading="lazy" />
+          </figure>
+          <div class="image-card-body">
+            <p>
+              A PC-Tools-style sector browser and editor. Reads any 32-bit LBA over SPI, shows the 512-byte
+              sector as hex + ASCII across two 256-byte pages, and writes the whole sector back with CMD24.
+              Boot volume <code>VERASDEDIT</code>.
+            </p>
+            <ul class="tags">
+              <li>6502</li><li>Hex + ASCII</li><li>32-bit LBA</li><li>CMD24 writes</li>
+            </ul>
+          </div>
+          <div class="image-card-actions">
+            <a class="btn primary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdedit.po" target="_blank" rel="noopener">Run in Apple2TS ↗</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdedit.po">Download .po</a>
+          </div>
+        </article>
+
+        <article class="image-card">
+          <div class="image-card-head">
+            <h3>verasdformat.po</h3>
+            <span class="size">140 KiB · floppy</span>
+          </div>
+          <figure>
+            <img src="assets/verasdformat.png" alt="VeraSDFormat progress screen: stages 00 to 10 each at 100 percent, followed by five OK verification lines and PASS" width="697" height="520" loading="lazy" />
+          </figure>
+          <div class="image-card-body">
+            <p>
+              Formats a VERA SD image to FAT32 for CMDR-DOS and A2VERA: MBR partition type <code>$0C</code> at
+              LBA 2048, VBR, FSInfo, both FATs, then a clean root cluster. Format and Verify share the same
+              metadata templates. Boot volume <code>VERASDFORMAT</code>.
+            </p>
+            <ul class="tags">
+              <li>MBR + FAT32</li><li>11 stages</li><li>CMD24 only</li><li>Verify pass</li>
+            </ul>
+          </div>
+          <div class="image-card-actions">
+            <a class="btn primary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdformat.po" target="_blank" rel="noopener">Run in Apple2TS ↗</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/verasdformat.po">Download .po</a>
+          </div>
+        </article>
+
+        <article class="image-card">
+          <div class="image-card-head">
+            <h3>VeraSD-IFS-ProDOS.po</h3>
+            <span class="size">boot disk + 32 MiB card</span>
+          </div>
+          <figure>
+            <img src="assets/VeraSD-IFS-ProDOS.png" alt="Bitsy Bye catalog on the ProDOS boot disk with VERASD.SYSTEM selected" width="697" height="520" loading="lazy" />
+          </figure>
+          <div class="image-card-body">
+            <p>
+              A resident ProDOS 8 block driver. Mounts a raw ProDOS SD image as a normal volume of up to
+              65,535 blocks, stays installed after <code>BYE</code>, and hands the boot chain on to the next
+              <code>.SYSTEM</code>. Boot volume <code>VERASDIFSPRODOS</code>.
+            </p>
+            <ul class="tags">
+              <li>ProDOS 8</li><li>32 MiB volume</li><li>Language-card bank 2</li><li>Copy II Plus</li>
+            </ul>
+          </div>
+          <div class="image-card-actions">
+            <a class="btn primary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-ProDOS.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-ProDOS.po" target="_blank" rel="noopener">Run in Apple2TS ↗</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-ProDOS.po">Download .po</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-ProDOS.img.zip">Card .zip</a>
+          </div>
+        </article>
+
+        <article class="image-card">
+          <div class="image-card-head">
+            <h3>VeraSD-IFS-FAT32.po</h3>
+            <span class="size">boot disk + 128 MiB card</span>
+          </div>
+          <figure>
+            <img src="assets/VeraSD-IFS-FAT32.png" alt="FAT32 client screen: mounted sector count, a root 8.3 catalog with HELLO.TXT and TESTNOW.BIN, and an ASCII checksum line" width="697" height="520" loading="lazy" />
+          </figure>
+          <div class="image-card-body">
+            <p>
+              The preliminary FAT32 client: catalogs root 8.3 names, reads a file and overwrites a preallocated
+              test file on cards larger than ProDOS can address. It is a standalone test app, not yet an IFS
+              driver. Boot volume <code>VERASDIFSFAT32</code>.
+            </p>
+            <ul class="tags">
+              <li class="is-wip">WIP</li><li>Raw FAT32</li><li>128 MiB fixture</li><li>Read / write test</li>
+            </ul>
+          </div>
+          <div class="image-card-actions">
+            <a class="btn primary" href="https://apple2ts.com/?theme=dark&amp;slot2=vera&amp;tab=vera&amp;s2d1=https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip#https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.po" target="_blank" rel="noopener">Run in Apple2TS ↗</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.po">Download .po</a>
+            <a class="btn flat" href="https://raw.githubusercontent.com/anomixer/verasdtool/master/VeraSD-IFS-FAT32.img.zip">Card .zip</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section id="editor">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">verasdedit.po · LBA 800</p>
+        <h2>The sector editor</h2>
+        <p>
+          The card is addressed as 512-byte sectors, so the editor speaks the same language as a partition
+          table, a FAT32 VBR or a Boot II sector. It opens on LBA <code>800</code> and reads the card’s CSD
+          register through CMD9 at startup to show the true sector total.
+        </p>
+      </div>
+
+      <div class="two-col">
+        <ul class="keys" aria-label="Editor keys">
+          <li><span>Toggle page (256-byte halves)</span><span class="combo"><kbd>Space</kbd></span></li>
+          <li><span>Next sector — wraps from the last to 0</span><span class="combo"><kbd>N</kbd></span></li>
+          <li><span>Previous sector — wraps from 0 to total − 1</span><span class="combo"><kbd>P</kbd></span></li>
+          <li><span>Reload the current sector</span><span class="combo"><kbd>R</kbd></span></li>
+          <li><span>Select an LBA (1–8 hex digits)</span><span class="combo"><kbd>L</kbd></span></li>
+          <li><span>Enter editor mode</span><span class="combo"><kbd>E</kbd></span></li>
+          <li><span>Back to ProDOS, clear screen</span><span class="combo"><kbd>Q</kbd></span></li>
+        </ul>
+
+        <aside class="panel">
+          <h3>Navigate, then edit</h3>
+          <p>
+            Inside the editor, movement is separate from typing. Press <kbd>E</kbd> to edit; then hex digits and
+            printable characters modify the byte under the cursor. <kbd>CR</kbd> accepts and returns to
+            navigate, <kbd>Esc</kbd> discards and re-reads the sector.
+          </p>
+          <ul class="mini-keys" aria-label="Editor movement keys">
+            <li><span>Cursor up / down one row</span><span class="combo"><kbd>I</kbd><kbd>M</kbd></span></li>
+            <li><span>Cursor left / right</span><span class="combo"><kbd>J</kbd><kbd>K</kbd></span></li>
+            <li><span>Hex field ↔ ASCII field</span><span class="combo"><kbd>Tab</kbd></span></li>
+            <li><span>Write the sector (navigate only)</span><span class="combo"><kbd>W</kbd></span></li>
+          </ul>
+          <p>
+            <kbd>W</kbd> sends token <code>$FE</code>, 512 data bytes and the 2-byte CRC through CMD24. A
+            successful write clears the status row and the dirty map.
+          </p>
+        </aside>
+      </div>
+
+      <div class="feat-grid three" style="margin-top:24px">
+        <article class="feat">
+          <span class="tag">Display</span>
+          <h3>Inverse and flash, not a guess</h3>
+          <p>
+            A byte shows inverse only if it differs from the last loaded sector. The cursor nibble or ASCII
+            character always flashes, so the position stays visible even on an edited byte. Editing a byte back
+            to its original value clears the inverse.
+          </p>
+        </article>
+        <article class="feat">
+          <span class="tag">Safety</span>
+          <h3>Did the card change?</h3>
+          <p>
+            Before writing, the editor re-reads the LBA and compares it with the buffer it loaded. If the card
+            was swapped, it asks <code>SD Card Changed. Force Write (y/n)?</code> instead of applying the old
+            card’s sector to the new image.
+          </p>
+        </article>
+        <article class="feat">
+          <span class="tag">Recovery</span>
+          <h3>Write-protect and retry</h3>
+          <p>
+            The data-response token separates a protected card (<code>$0D</code>, shown as
+            <code>SD Write Protected!</code>) from a genuine failure. A generic failure re-runs SD init once
+            before reporting <code>SD Write failed!</code>.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section id="formatter">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">verasdformat.po · menu 1–3</p>
+        <h2>Build a FAT32 volume, then prove it</h2>
+        <p>
+          The formatter writes an MBR first, then builds the FAT32 metadata inside the partition at LBA 2048.
+          Free-space stages use one CMD24 per sector, because Apple2TS implements CMD24 but not CMD25.
+        </p>
+      </div>
+
+      <div class="two-col">
+        <div class="table-panel">
+          <div class="table-scroll">
+            <table class="stages">
+              <caption>Eleven stages of a quick format</caption>
+              <thead>
+                <tr><th scope="col">#</th><th scope="col">Stage</th><th scope="col">What it writes</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">00</td><td class="title">Master boot record</td><td>Partition type <code>$0C</code> starting at LBA 2048</td></tr>
+                <tr><td class="num">01</td><td class="title">Boot sector</td><td>FAT32 VBR: sectors/cluster, reserved count, FAT size</td></tr>
+                <tr><td class="num">02</td><td class="title">FSInfo</td><td>Free-cluster and next-free hints</td></tr>
+                <tr><td class="num">03</td><td class="title">Boot sector backup</td><td>The VBR copy at the end of the reserved area</td></tr>
+                <tr><td class="num">04</td><td class="title">FSInfo backup</td><td>The matching backup FSInfo sector</td></tr>
+                <tr><td class="num">05</td><td class="title">FAT 1, first sector</td><td>Media descriptor and first allocated clusters</td></tr>
+                <tr><td class="num">06</td><td class="title">FAT 1, free space</td><td>Zeroes through the free-cluster hint</td></tr>
+                <tr><td class="num">07</td><td class="title">FAT 2, first sector</td><td>The second FAT starts with identical entries</td></tr>
+                <tr><td class="num">08</td><td class="title">FAT 2, free space</td><td>Zeroes through the second copy</td></tr>
+                <tr><td class="num">09</td><td class="title">Erase root directory</td><td>First root-cluster sector, keeping the volume label</td></tr>
+                <tr><td class="num">10</td><td class="title">Erase root remainder</td><td>Every remaining sector of the root cluster</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <h3>Guarded by a typed word</h3>
+          <ul class="plain-list" aria-label="Formatter menu">
+            <li><code>1</code><span>Catalog SD — root 8.3 names, directories, file sizes</span></li>
+            <li><code>2</code><span>Format SD — type <code>FORMAT</code> + <kbd>Return</kbd>; <kbd>Esc</kbd> aborts</span></li>
+            <li><code>3</code><span>Verify SD — read back and compare every metadata sector</span></li>
+            <li><code>0</code><span>Exit — restore zero page and return to ProDOS</span></li>
+          </ul>
+          <p>
+            Formatting is a quick format: it lays down metadata and clears the root cluster, not every sector of
+            the card. The verify pass re-reads MBR, VBR, FSInfo, the VBR copy and the FSInfo copy through CMD17
+            and finishes with <code>PASS</code> or <code>FAIL - N errors</code>.
+          </p>
+          <p>
+            SPI is initialised at the compatible 390 kHz setting; a 100 MB card in Apple2TS formats in about
+            42 seconds.
+          </p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section id="drivers">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Two ways to reach a card</p>
+        <h2>A ProDOS volume, or a FAT32 filesystem</h2>
+        <p>
+          One path makes the SD image look like a normal ProDOS disk, limited to 65,535 blocks. The other
+          reaches past the 32 MiB boundary and speaks FAT32 directly — but it is not a ProDOS device yet.
+        </p>
+      </div>
+
+      <div class="driver-grid">
+        <article class="driver">
+          <div class="driver-head">
+            <h3>VeraSD-IFS-ProDOS</h3>
+            <span class="kind">resident driver</span>
+          </div>
+          <p>
+            A ProDOS 8 block driver in language-card bank 2 at <code>$D400</code>, with its common bridge at
+            <code>$FF00</code>. After installation the SD volume is catalogued like any other ProDOS disk, and
+            it survives <code>BYE</code>.
+          </p>
+          <ul>
+            <li><b>65,535 blocks</b> (about 32 MiB) per raw ProDOS image.</li>
+            <li>SDHC block addressing and SDSC byte addressing, VERA in slot 2 or 4.</li>
+            <li>Reads starting below page <code>$CE</code> write straight into the caller’s buffer and poll SPI inline; reads at <code>$CE00</code> and above keep the bank-switching path.</li>
+            <li><code>VERASD.SYSTEM</code> is type <code>$FF</code> (SYS); <code>VERASD.BIN</code> is type <code>$06</code> for <code>BRUN</code>.</li>
+            <li>After the result, the SYS helper loads the next root <code>.SYSTEM</code>; <code>QUIT.SYSTEM</code> sits last in the catalog.</li>
+          </ul>
+          <div class="status-line">
+            <span>VERASDIFSPRODOS</span>
+            <span>65,535 blocks</span>
+            <span>Copy II Plus 8.4</span>
+          </div>
+        </article>
+
+        <article class="driver">
+          <div class="driver-head">
+            <h3>VeraSD-IFS-FAT32</h3>
+            <span class="kind wip">WIP / preliminary</span>
+          </div>
+          <p>
+            A standalone ProDOS-launched client for raw FAT32 or the first FAT32 MBR partition. It reaches the
+            128 MiB fixture and its fragmented files beyond the ProDOS 32 MiB limit, but does not register a
+            ProDOS disk device.
+          </p>
+          <ul>
+            <li><code>C</code> catalog root 8.3 names and sizes.</li>
+            <li><code>R</code> read a named file; show its size, first bytes and checksum.</li>
+            <li><code>W</code> then <code>Y</code> overwrite the preallocated 1,024-byte <code>TESTNOW.BIN</code>.</li>
+            <li><code>Q</code> return to BASIC.</li>
+            <li>Still missing: create, allocate, append/resize, delete, rename, subdirectories, long names and a ProDOS file interface.</li>
+          </ul>
+          <div class="status-line">
+            <span>VERASDIFSFAT32</span>
+            <span>128 MiB fixture</span>
+            <span>BRUN FAT32.SYSTEM</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Under the hood</p>
+        <h2>Everything is 6502, ProDOS MLI and SPI</h2>
+        <p>
+          There is no host-side disk driver: the same binaries run on a real Apple IIe with a VERA card. The
+          hard-won details below are why the tools work on both emulators and hardware.
+        </p>
+      </div>
+
+      <div class="feat-grid">
+        <article class="feat">
+          <span class="tag">Display</span>
+          <h3>80 columns interleave AUX and MAIN</h3>
+          <p>
+            Each 40-address text-page cell renders AUX on the left and MAIN on the right, so
+            <code>PUTCH</code> swaps banks every character. Without it the editor’s hex columns land in the
+            wrong half of the screen.
+          </p>
+        </article>
+        <article class="feat">
+          <span class="tag">Banking</span>
+          <h3>RAMWRT leaks out of the display code</h3>
+          <p>
+            <code>$0200–$BFFF</code> follows the RAMWRT/RAMRD soft switches. Any routine that writes scratch
+            or FAT metadata after a display call has to force <code>RAMWRTOFF</code> first, or the values land
+            in the auxiliary bank and the output turns to garbage.
+          </p>
+        </article>
+        <article class="feat">
+          <span class="tag">SPI</span>
+          <h3>512 bytes without a call per byte</h3>
+          <p>
+            Sector reads and CMD24 writes poll the SPI status register inline in their transfer loops. At the
+            compatible 390 kHz clock the gain is lower CPU overhead, not a faster bus; buffer and timeout
+            behaviour stays unchanged.
+          </p>
+        </article>
+        <article class="feat">
+          <span class="tag">Assembler</span>
+          <h3>Two traps in the vendored 6502 assembler</h3>
+          <p>
+            <code>CPX</code>/<code>CPY</code> must choose zero-page for ZP labels (a missing mode broke LBA
+            entry), and <code>AND</code>/<code>ORA</code> must never take an indexed-Y operand — the assembler
+            silently assembled that as address <code>$0000</code>. Bit masks are shifted, not looked up.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section id="build">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Build it</p>
+        <h2>One dependency, everything else vendored</h2>
+        <p>
+          The 6502 assembler, the Applesoft compiler, the shared ProDOS base disk, the volume-name writer and
+          the file-date writer all live in this repository. Node.js is the only external requirement.
+        </p>
+      </div>
+
+      <pre class="code"><span class="c">REM needs Node.js only</span>
+git clone https://github.com/anomixer/verasdtool
+cd verasdtool
+
+<span class="p">build.bat</span> all                       <span class="c">REM editor + formatter + FAT32 + ProDOS</span>
+<span class="p">node</span> src/verasd-prodos/verasd.mjs     <span class="c">REM one target at a time</span>
+
+<span class="p">npm run</span> test:prodos                 <span class="c">REM 20 driver cases + installer cases</span>
+<span class="p">npm run</span> test:fat32                  <span class="c">REM 25 assembled-client cases</span></pre>
+
+      <ul class="build-notes">
+        <li><code>build.bat verasdedit</code>, <code>verasdformat</code>, <code>fat32</code>, <code>prodos</code> or <code>all</code> picks a target.</li>
+        <li>The ProDOS builder accepts <code>--boot-output=&lt;path&gt;</code>; <code>--reset-sd</code> recreates the SD image, so use it only on disposable data.</li>
+        <li>The FAT32 fixture is rebuilt with <code>python src/verasd-fat32/fat32-fixture.py</code>, which refuses to overwrite an existing image.</li>
+        <li>Tests need Python and <code>py65</code>; the optional <code>check_fat32_image.py</code> uses <code>pyfatfs</code>.</li>
+        <li>Boot disks and card archives are tracked; raw 32 MiB and 128 MiB <code>.img</code> files stay out of git.</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-links">
+        <a href="https://github.com/anomixer/verasdtool">Source on GitHub ↗</a>
+        <a href="https://github.com/anomixer/verasdtool#readme">README ↗</a>
+        <a href="https://github.com/anomixer/verasdtool/blob/master/AGENTS.md">Engineering notes ↗</a>
+        <a href="https://apple2ts.com/">Apple2TS ↗</a>
+        <a href="https://github.com/anomixer/AppleWin">AppleWin ↗</a>
+        <a href="https://github.com/fvdhoef/vera-module">VERA module ↗</a>
+      </div>
+      <div>Pure 6502 · no host disk driver</div>
+    </div>
+    <p class="credits">
+      VERA is the FPGA video and I/O board from the Commander X16 project by
+      <a href="https://github.com/fvdhoef/vera-module">Frank van den Hoef</a>; the Apple II VERA port and
+      <a href="https://apple2ts.com/">Apple2TS</a> emulator come from
+      <a href="https://github.com/ct6502">Chris Torrence</a> and contributors. ProDOS 2.4.3 and Bitsy Bye
+      are part of the ProDOS 8 ecosystem; Copy II Plus is used here only as a ProDOS test program. The
+      tools, screenshots and this page are fan work for the Apple II and VERA communities.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -843,8 +843,16 @@ SHOW_SDFAIL:
     JSR READ_KEY_ANY
     JMP QUIT
 SHOW_SMALL:
+    LDA ZP_ERR
+    CMP #$02
+    BEQ SHOW_SMALL_LAYOUT
     LDX #<MSG_SMALL
     LDY #>MSG_SMALL
+    JMP SHOW_SMALL_PRINT
+SHOW_SMALL_LAYOUT:
+    LDX #<MSG_SMALLLAYOUT
+    LDY #>MSG_SMALLLAYOUT
+SHOW_SMALL_PRINT:
     JSR PSTR
     JSR READ_KEY_ANY
     JMP QUIT
@@ -1802,7 +1810,7 @@ SPI_READ_A:
 ; if the status bit is ever seen set.
 ; Bounded: a card that never frees the line sets ZP_ERR instead of freezing the
 ; machine. The count is 16-bit and generous, so a normal controller (which goes
-; not-busy within a few cycles) never trips it. ZP_SCR2/ZP_SCR3 are free here —
+; not-busy within a few cycles) never trips it. ZP_SCR2/ZP_SCR3 are free here â€”
 ; they are only used by PRINT_DEC32W, which is not active during an SD transfer.
 SPI_WAIT:
     LDY #$00
@@ -2223,7 +2231,7 @@ GST_FAIL:
 
 SHL_TOTAL:
     ; Called only from GET_SD_TOTAL, which forces RAMWRTOFF and does no
-    ; display in between — so the V_TOTAL stores below land in MAIN.
+    ; display in between â€” so the V_TOTAL stores below land in MAIN.
     STA ZP_TEMP
 SHL_TL:
     ASL V_TOTAL
@@ -2555,6 +2563,7 @@ COMPUTE_GEOMETRY:
     STA ZP_ERR
     STA RAMWRTOFF         ; VARS writes below; the probe screen's PSTR left
                           ; the write bank on whatever column it ended on
+    STA RAMRDOFF          ; and VARS reads must come from the same bank
     LDA #$94
     STA ZP_PTR2HI           ; every VARS variable lives on page $44, so the
     STA ZP_PTR3HI           ; helper pointers only ever need their low byte set
@@ -2736,12 +2745,14 @@ CG_FAT_LOOP:
     JSR SHR32
     LDA #$03
     JSR SHL32
-    LDA #<V_TMP3
-    STA ZP_PTR2
     LDA #<V_FATSZ
+    STA ZP_PTR2
+    LDA #<V_TMP3
     STA ZP_PTR3
     JSR CMP32
-    BEQ CG_FAT_DONE         ; the size agrees with the assumption
+    BCS CG_FAT_DONE         ; current FAT has enough entries for every cluster;
+                            ; the useful fixed point is the larger side of the
+                            ; 1016 <-> 1008 pair on a 128 MiB card
     LDA #<V_FATSZ
     STA ZP_PTR2
     LDA #<V_TMP3
@@ -2753,12 +2764,26 @@ CG_FAT_LOOP:
     STA ZP_ERR
     RTS
 CG_FAT_DONE:
+    ; Recompute the cluster count and data start from the accepted FAT size.
+    ; CG_AVAIL ran at the top of the loop with the previous value; without this
+    ; last pass the printed/used layout can mix the two sides of the fixed point
+    ; (792 FAT sectors with a 786-sector data start on a 100 MiB card).
+    JSR CG_AVAIL
     LDA #$00
     STA ZP_ERR
     RTS
 
 ; CG_AVAIL - V_CLUST and V_DATA for the current V_FATSZ
 CG_AVAIL:
+    ; This runs after the probe screen's display calls, which leave RAMWRT on
+    ; whichever bank the last column used.  The cluster/data results must land
+    ; in MAIN, or SHOW_LAYOUT reads an older MAIN copy and prints a mixed layout.
+    LDA #$94
+    STA ZP_PTR2HI           ; VARS live on page $94; the fit loop's shift and
+    STA ZP_PTR3HI           ; compare helpers leave these high bytes clobbered
+    LDA #$00
+    STA RAMWRTOFF
+    STA RAMRDOFF
     LDA #<V_TMP4            ; V_TMP4 = 2 * V_FATSZ
     STA ZP_PTR2
     LDA #<V_FATSZ
@@ -3180,6 +3205,7 @@ PRINT_DEC32W:
     ; the reads and the digit-output phase will look.
     LDA #$00
     STA RAMWRTOFF
+    STA RAMRDOFF
     LDA ZP_PTR2
     STA ZP_SCR2
     LDA #$00
@@ -3467,6 +3493,7 @@ SHOW_LAYOUT:
     STA ZP_PTR3HI
     LDA #$00
     STA RAMWRTOFF
+    STA RAMRDOFF
     LDA #$0A
     JSR GOTO_ROW
     LDX #<MSG_LAYOUT
@@ -3684,7 +3711,7 @@ RF_TABEND:
 ; -----------------------------------------------------------------------------
 ; 32-bit constants the geometry needs. Little-endian.
 ; -----------------------------------------------------------------------------
-K_32:         !BYTE 20, 00, 00, 00
+K_32:         !BYTE 32, 00, 00, 00
 K_100:        !BYTE 100, 00, 00, 00
 K_511:        !BYTE $FF, $01, 00, 00
 K_MINCLUST:   !BYTE $F5, $FF, 00, 00
@@ -3740,9 +3767,15 @@ MSG_SDFAIL:
     !BYTE 0
 MSG_SMALL:
     !BYTE $0D
-    ASC "  This card is too small for a FAT32 volume"
+    ASC "  This card is too small for a FAT32 volume:"
     !BYTE $0D
-    ASC "  with 65525 clusters. Nothing was changed."
+    ASC "  it needs at least 65525 clusters. Nothing changed."
+    !BYTE 0
+MSG_SMALLLAYOUT:
+    !BYTE $0D
+    ASC "  No FAT32 layout is possible for this card."
+    !BYTE $0D
+    ASC "  Nothing was changed."
     !BYTE 0
 MSG_ANYKEY:
     !BYTE $0D

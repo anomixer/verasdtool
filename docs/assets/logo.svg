@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VeraSDTool hex-sector mark">
+  <defs>
+    <linearGradient id="sector" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#5ee69b"/>
+      <stop offset=".55" stop-color="#39d5ff"/>
+      <stop offset="1" stop-color="#ffc45c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#0a0f16"/>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#243244"/>
+  <g fill="url(#sector)">
+    <rect x="11" y="15" width="8" height="5" rx="1.6"/>
+    <rect x="22" y="15" width="8" height="5" rx="1.6"/>
+    <rect x="33" y="15" width="8" height="5" rx="1.6"/>
+    <rect x="44" y="15" width="9" height="5" rx="1.6"/>
+    <rect x="11" y="24" width="8" height="5" rx="1.6"/>
+    <rect x="22" y="24" width="8" height="5" rx="1.6"/>
+    <rect x="33" y="24" width="8" height="5" rx="1.6"/>
+    <rect x="44" y="24" width="9" height="5" rx="1.6" opacity=".45"/>
+    <rect x="11" y="33" width="8" height="5" rx="1.6" opacity=".45"/>
+    <rect x="22" y="33" width="8" height="5" rx="1.6" opacity=".45"/>
+    <rect x="33" y="33" width="8" height="5" rx="1.6" opacity=".45"/>
+    <rect x="44" y="33" width="9" height="5" rx="1.6" opacity=".45"/>
+  </g>
+  <rect x="11" y="45" width="42" height="2.4" rx="1.2" fill="#243244"/>
+  <rect x="11" y="51" width="26" height="2.4" rx="1.2" fill="#39d5ff" opacity=".7"/>
+</svg>

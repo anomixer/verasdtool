@@ -1,5 +1,9 @@
 # VeraSDTool — VERA SD Toolkit
 
+> 🌐 **Landing page:** [anomixer.github.io/verasdtool](https://anomixer.github.io/verasdtool/) — boot each
+> tool in Apple2TS (VERA in slot 2) with its SD card image, streamed straight from this repository. The page
+> lives in [`docs/index.html`](docs/index.html).
+
 ### VeraSDEdit — Hex sector editor
 
 ![VeraSDEdit](verasdedit.png)
@@ -73,6 +77,8 @@ reads, and performs a test write; it is not yet a real IFS driver.
 | VeraSD-IFS-FAT32.po / `.img.zip` | FAT32 boot disk and packaged test volume |
 | verasdedit.png / verasdformat.png | VeraSDEdit / VeraSDFormat screenshots |
 | VeraSD-IFS-ProDOS.png / VeraSD-IFS-FAT32.png | ProDOS / FAT32 screenshots |
+| docs/ | GitHub Pages landing page (`index.html`, `assets/`, `.nojekyll`) |
+| .github/workflows/pages.yml | Deploys `docs/` to GitHub Pages on pushes to `master` |
 
 Bootable `.po` disk images and the two `.img.zip` archives are tracked. Raw
 `.img` files remain ignored so the tested SD images can be shared without

@@ -214,7 +214,9 @@ register_device:
         inx
         stx device_count
         cpx #14
-        bcs registration_bad
+        bcc device_count_ok
+        jmp registration_bad
+device_count_ok:
         ldy #0
 check_device:
         cpy device_count
@@ -222,13 +224,29 @@ check_device:
         lda DEVLST,Y
         and #$F0
         cmp on_line_unit
-        beq registration_bad
+        beq replace_device
         iny
         bne check_device
+replace_device:
+        ; Some emulators advertise a phantom slot-2 device to ProDOS at boot
+        ; (Apple2TS exposes unit $2D).  Reuse that entry for our $20 unit
+        ; instead of refusing to install; the slot's DEVADR vector is shared.
+        sty device_index
+        lda #1
+        sta device_action
+        lda DEVLST,Y
+        sta old_devlst_entry
+        lda on_line_unit
+        sta DEVLST,Y
+        jmp set_vector
 append_device:
+        sty device_index
+        lda #0
+        sta device_action
         lda on_line_unit
         sta DEVLST,Y
         inc DEVCNT
+set_vector:
         lda zp_vera+1
         and #$0F
         asl
@@ -245,6 +263,15 @@ append_device:
         !byte ON_LINE
         !word on_line_params
         bcc on_ok
+        ldy device_index
+        lda device_action
+        beq rollback_append
+        lda old_devlst_entry
+        sta DEVLST,Y
+        jmp rollback_vector
+rollback_append:
+        dec DEVCNT
+rollback_vector:
         lda installed_unit
         lsr
         lsr
@@ -254,7 +281,6 @@ append_device:
         sta DEVADR,X
         lda old_vector+1
         sta DEVADR+1,X
-        dec DEVCNT
 registration_bad:
         sec
         rts
@@ -820,6 +846,9 @@ address_mode: !byte 0
 hcs_flag: !byte 0
 init_attempts: !byte 0
 device_count: !byte 0
+device_index: !byte 0
+device_action: !byte 0
+old_devlst_entry: !byte 0
 old_vector: !word 0
 txt_novera: ASC "VERA NOT FOUND"
             !byte 0
